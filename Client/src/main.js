@@ -14,11 +14,11 @@ document.querySelector('#app').innerHTML = `
         <h3>Authorization Server</h3>
         <label>
           Authorize endpoint
-          <input type="text" id="cfg-authorize-endpoint" value="http://localhost:5001/authorize" />
+          <input type="text" id="cfg-authorize-endpoint" value="${import.meta.env.VITE_AUTHORIZE_ENDPOINT}" />
         </label>
         <label>
           Token endpoint
-          <input type="text" id="cfg-token-endpoint" value="http://localhost:5001/token" />
+          <input type="text" id="cfg-token-endpoint" value="${import.meta.env.VITE_TOKEN_ENDPOINT}" />
         </label>
       </div>
 
@@ -26,7 +26,7 @@ document.querySelector('#app').innerHTML = `
         <h3>Protected Resource</h3>
         <label>
           Resource endpoint
-          <input type="text" id="cfg-resource-endpoint" value="http://localhost:5002/resource" />
+          <input type="text" id="cfg-resource-endpoint" value="${import.meta.env.VITE_RESOURCE_ENDPOINT}" />
         </label>
       </div>
 
@@ -34,19 +34,19 @@ document.querySelector('#app').innerHTML = `
         <h3>Client</h3>
         <label>
           Client ID
-          <input type="text" id="cfg-client-id" value="oauth-test-client" />
+          <input type="text" id="cfg-client-id" value="${import.meta.env.VITE_CLIENT_ID}" />
         </label>
         <label>
           Client secret
-          <input type="password" id="cfg-client-secret" value="" />
+          <input type="password" id="cfg-client-secret" value="${import.meta.env.VITE_CLIENT_SECRET}" />
         </label>
         <label>
           Redirect URI
-          <input type="text" id="cfg-redirect-uri" value="http://localhost:5000/callback" />
+          <input type="text" id="cfg-redirect-uri" value="${import.meta.env.VITE_REDIRECT_URI}" />
         </label>
         <label>
           Scope
-          <input type="text" id="cfg-scope" value="foo" />
+          <input type="text" id="cfg-scope" value="${import.meta.env.VITE_SCOPE}" />
         </label>
       </div>
     </section>
