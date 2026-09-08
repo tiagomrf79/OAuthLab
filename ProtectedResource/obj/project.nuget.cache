@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "EgfCjI66XBE=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\tiago\\Source\\Repos\\OAuthLab\\ProtectedResource\\ProtectedResource.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\tiago\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.11\\microsoft.aspnetcore.openapi.10.0.11.nupkg.sha512",
+    "C:\\Users\\tiago\\.nuget\\packages\\microsoft.openapi\\2.7.5\\microsoft.openapi.2.7.5.nupkg.sha512"
+  ],
+  "logs": []
+}
