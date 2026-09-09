@@ -1,4 +1,15 @@
 import './style.css'
+import {
+  randomString,
+  getSession,
+  setSession,
+  clearSession,
+  buildAuthorizeUrl,
+  exchangeCodeForToken,
+  refreshAccessToken,
+  callProtectedResource,
+} from './oauth.js'
+import { appendLog, clearLog, renderStoredLog } from './log.js'
 
 document.querySelector('#app').innerHTML = `
   <header class="app-header">
@@ -76,6 +87,8 @@ document.querySelector('#app').innerHTML = `
         </button>
       </div>
 
+      <p class="notice" id="notice" hidden></p>
+
       <h2>Session State</h2>
       <dl class="status-strip">
         <div class="status-item">
@@ -116,3 +129,143 @@ document.querySelector('#app').innerHTML = `
     </section>
   </main>
 `
+
+function readConfig() {
+  return {
+    authorizeEndpoint: document.getElementById('cfg-authorize-endpoint').value.trim(),
+    tokenEndpoint: document.getElementById('cfg-token-endpoint').value.trim(),
+    resourceEndpoint: document.getElementById('cfg-resource-endpoint').value.trim(),
+    clientId: document.getElementById('cfg-client-id').value.trim(),
+    clientSecret: document.getElementById('cfg-client-secret').value,
+    redirectUri: document.getElementById('cfg-redirect-uri').value.trim(),
+    scope: document.getElementById('cfg-scope').value.trim(),
+  }
+}
+
+function hideNotice() {
+  const notice = document.getElementById('notice')
+  notice.hidden = true
+  notice.textContent = ''
+}
+
+function showNotice(text) {
+  const notice = document.getElementById('notice')
+  notice.textContent = text
+  notice.hidden = false
+}
+
+function refreshStatusStrip() {
+  document.getElementById('status-state').textContent = getSession('state') || '—'
+  document.getElementById('status-code').textContent = getSession('code') || '—'
+  document.getElementById('status-access-token').textContent = getSession('access_token') || '—'
+  document.getElementById('status-token-type').textContent = getSession('token_type') || '—'
+  document.getElementById('status-expires-in').textContent = getSession('expires_in') || '—'
+  document.getElementById('status-refresh-token').textContent = getSession('refresh_token') || '—'
+}
+
+function processRedirectResponse() {
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('code') && !params.has('error')) return
+
+  const response = { method: 'GET', url: window.location.href, headers: { Referer: document.referrer } }
+
+  if (params.has('error')) {
+    response.body = `error: ${params.get('error')}\ndescription: ${params.get('error_description') || '(none)'}`
+    appendLog({ title: 'Redirect from authorization server — error', response })
+    history.replaceState({}, '', window.location.pathname)
+    return
+  }
+
+  const returnedState = params.get('state')
+  const expectedState = getSession('state')
+  if (returnedState !== expectedState) {
+    response.body = `expected state: ${expectedState}\nreceived state: ${returnedState}`
+    appendLog({ title: 'Redirect from authorization server — state mismatch', response })
+    history.replaceState({}, '', window.location.pathname)
+    return
+  }
+
+  const code = params.get('code')
+  setSession('code', code)
+  appendLog({ title: 'Redirect from authorization server', response })
+  history.replaceState({}, '', window.location.pathname)
+  refreshStatusStrip()
+}
+
+document.getElementById('btn-authorize').addEventListener('click', () => {
+  hideNotice()
+  const config = readConfig()
+  const state = randomString()
+  setSession('state', state)
+  setSession('code', '')
+  const url = buildAuthorizeUrl(config, state)
+  appendLog({ title: 'Redirect to authorization server', request: { method: 'GET', url } })
+  window.location.replace(url)
+})
+
+document.getElementById('btn-exchange-token').addEventListener('click', async () => {
+  hideNotice()
+  const config = readConfig()
+  const code = getSession('code')
+  if (!code) {
+    showNotice('No authorization code in session — run "Start Authorization Request" first.')
+    return
+  }
+
+  const { request, response, json } = await exchangeCodeForToken(config, code)
+  appendLog({ title: 'Exchange code for tokens', request, response })
+
+  if (json) {
+    setSession('access_token', json.access_token)
+    setSession('token_type', json.token_type)
+    setSession('expires_in', json.expires_in?.toString())
+    setSession('refresh_token', json.refresh_token)
+    refreshStatusStrip()
+  }
+})
+
+document.getElementById('btn-refresh-token').addEventListener('click', async () => {
+  hideNotice()
+  const config = readConfig()
+  const refreshToken = getSession('refresh_token')
+  if (!refreshToken) {
+    showNotice('No refresh token in session.')
+    return
+  }
+
+  const { request, response, json } = await refreshAccessToken(config, refreshToken)
+  appendLog({ title: 'Refresh access token', request, response })
+
+  if (json) {
+    setSession('access_token', json.access_token)
+    setSession('token_type', json.token_type)
+    setSession('expires_in', json.expires_in?.toString())
+    if (json.refresh_token) setSession('refresh_token', json.refresh_token)
+    refreshStatusStrip()
+  }
+})
+
+document.getElementById('btn-call-resource').addEventListener('click', async () => {
+  hideNotice()
+  const config = readConfig()
+  const accessToken = getSession('access_token')
+  if (!accessToken) {
+    showNotice('No access token in session.')
+    return
+  }
+
+  const { request, response } = await callProtectedResource(config.resourceEndpoint, accessToken)
+  appendLog({ title: 'Call protected resource', request, response })
+})
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  hideNotice()
+  clearSession()
+  refreshStatusStrip()
+})
+
+document.getElementById('btn-clear-console').addEventListener('click', clearLog)
+
+renderStoredLog()
+processRedirectResponse()
+refreshStatusStrip()

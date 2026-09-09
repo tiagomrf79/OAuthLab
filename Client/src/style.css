@@ -194,6 +194,16 @@ h1, h2, h3 {
   color: var(--text);
 }
 
+.notice {
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-h);
+  font-size: 13px;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -252,6 +262,78 @@ h1, h2, h3 {
 .console-placeholder {
   color: var(--text);
   margin: 0;
+}
+
+.log-entry {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.log-entry:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.log-entry-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.log-title {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.log-time {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.log-block-wrap {
+  margin-top: 6px;
+}
+
+.log-block-label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.log-block {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.log-block-main {
+  font-weight: 600;
+  color: var(--text-h);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-block-headers,
+.log-block-body {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-block-headers {
+  color: var(--text);
+  font-size: 11px;
 }
 
 @media (max-width: 900px) {
