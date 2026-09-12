@@ -12,9 +12,6 @@ public class AuthorizeModel(InMemoryStore store) : PageModel
     public string ClientName { get; set; } = "";
     public List<string> RequestedScopes { get; set; } = [];
 
-    // Validation here only covers what we can't safely bounce back to the client for
-    // (an unknown client, or a redirect_uri it never registered) — everything else, including
-    // whether response_type/scope are even valid, is deferred to /approve, same as the book.
     public IActionResult OnGet(string response_type, string client_id, string redirect_uri, string? scope, string? state)
     {
         if (User.Identity?.IsAuthenticated != true)
@@ -26,12 +23,18 @@ public class AuthorizeModel(InMemoryStore store) : PageModel
         var client = store.FindClient(client_id);
         if (client is null)
         {
-            return BadRequest("Unknown client_id.");
+            return BadRequest("Unknown client.");
         }
 
         if (!client.RedirectUris.Contains(redirect_uri))
         {
-            return BadRequest("redirect_uri does not match a registered value for this client.");
+            return BadRequest("Invalid redirect URI.");
+        }
+
+        var allowedScopes = (scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes).ToArray();
+        if (allowedScopes.Length == 0)
+        {
+            return Redirect(OAuthRedirect.Build(redirect_uri, new() { ["error"] = "invalid_scope" }, state));
         }
 
         var reqId = InMemoryStore.GenerateToken(8);
@@ -46,7 +49,7 @@ public class AuthorizeModel(InMemoryStore store) : PageModel
 
         ReqId = reqId;
         ClientName = client.Name;
-        RequestedScopes = [.. (scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes)];
+        RequestedScopes = [.. allowedScopes];
         return Page();
     }
 }

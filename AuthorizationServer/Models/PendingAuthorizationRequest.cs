@@ -1,8 +1,7 @@
 namespace AuthorizationServer.Models;
 
 // The raw /authorize query, stashed server-side between the consent screen (GET /authorize)
-// and the decision (POST /approve) — mirrors the book's authServer.js "requests" map, so the
-// approval form only ever carries an opaque reqid instead of client-controlled redirect data.
+// and the decision (POST /approve).
 public class PendingAuthorizationRequest
 {
     public required string ResponseType { get; init; }

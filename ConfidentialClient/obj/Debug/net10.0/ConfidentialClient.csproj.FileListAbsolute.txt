@@ -22,6 +22,7 @@ C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\rjsmcs
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\scopedcss\Views\Shared\_Layout.cshtml.rz.scp.css
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\scopedcss\bundle\ConfidentialClient.styles.css
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\scopedcss\projectbundle\ConfidentialClient.bundle.scp.css
+C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\compressed\cv0jvf28zy-{0}-5u7ik7myb3-5u7ik7myb3.gz
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\compressed\r7djrpcema-{0}-61n19gt1b8-61n19gt1b8.gz
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\compressed\ehsassmkij-{0}-xtxxf3hu2r-xtxxf3hu2r.gz
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\compressed\soq97u45hk-{0}-bqjiyaj88i-bqjiyaj88i.gz
@@ -95,4 +96,3 @@ C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\refint
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\ConfidentialClient.pdb
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\ConfidentialClient.genruntimeconfig.cache
 C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\ref\ConfidentialClient.dll
-C:\Users\tiago\Source\Repos\OAuthLab\ConfidentialClient\obj\Debug\net10.0\compressed\cv0jvf28zy-{0}-5u7ik7myb3-5u7ik7myb3.gz

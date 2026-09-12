@@ -1,6 +1,6 @@
 namespace AuthorizationServer.Models;
 
-public class AccessToken
+public class AccessToken //TBR
 {
     public required string Token { get; init; }
     public required string ClientId { get; init; }
@@ -9,7 +9,7 @@ public class AccessToken
     public required DateTimeOffset ExpiresAt { get; init; }
 }
 
-public class RefreshToken
+public class RefreshToken //TBR
 {
     public required string Token { get; init; }
     public required string ClientId { get; init; }

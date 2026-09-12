@@ -6,6 +6,8 @@ using ConfidentialClient.Models;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using static ConfidentialClient.Controllers.SessionKeys.Config;
+using static ConfidentialClient.Controllers.SessionKeys.OAuth;
 
 namespace ConfidentialClient.Controllers;
 
@@ -14,23 +16,6 @@ namespace ConfidentialClient.Controllers;
 // server makes on the flow's behalf is logged in full as a request/response console.
 public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration config) : Controller
 {
-    private const string StateKey = "oauth.state";
-    private const string CodeKey = "oauth.code";
-    private const string AccessTokenKey = "oauth.access_token";
-    private const string TokenTypeKey = "oauth.token_type";
-    private const string ExpiresInKey = "oauth.expires_in";
-    private const string RefreshTokenKey = "oauth.refresh_token";
-    private const string ScopeKey = "oauth.scope";
-    private const string LogKey = "oauth.log";
-
-    private const string CfgAuthorizeEndpointKey = "cfg.authorize_endpoint";
-    private const string CfgTokenEndpointKey = "cfg.token_endpoint";
-    private const string CfgResourceEndpointKey = "cfg.resource_endpoint";
-    private const string CfgClientIdKey = "cfg.client_id";
-    private const string CfgClientSecretKey = "cfg.client_secret";
-    private const string CfgRedirectUriKey = "cfg.redirect_uri";
-    private const string CfgScopeKey = "cfg.scope";
-
     [HttpGet("/")]
     public IActionResult Index()
     {
@@ -42,9 +27,9 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     {
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
-        ClearTokens();
+        ClearOAuthSession();
 
-        var state = RandomToken();
+        var state = GenerateState();
         HttpContext.Session.SetString(StateKey, state);
 
         var query = new Dictionary<string, string?>
@@ -205,7 +190,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     [HttpGet("/reset")]
     public IActionResult Reset()
     {
-        ClearTokens();
+        ClearOAuthSession();
         return RedirectToAction(nameof(Index));
     }
 
@@ -259,7 +244,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         return (response, responseBody);
     }
 
-    private void ClearTokens()
+    private void ClearOAuthSession()
     {
         foreach (var key in new[] { StateKey, CodeKey, AccessTokenKey, TokenTypeKey, ExpiresInKey, RefreshTokenKey, ScopeKey })
         {
@@ -419,5 +404,5 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         }
     }
 
-    private static string RandomToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+    private static string GenerateState() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
 }

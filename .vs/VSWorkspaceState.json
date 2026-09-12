@@ -1,0 +1,13 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\AuthorizationServer",
+    "\\AuthorizationServer\\Properties",
+    "\\ConfidentialClient",
+    "\\ConfidentialClient\\Properties",
+    "\\ProtectedResource",
+    "\\ProtectedResource\\Properties"
+  ],
+  "SelectedNode": "\\AuthorizationServer\\AuthorizationServer.csproj",
+  "PreviewInSolutionExplorer": false
+}
