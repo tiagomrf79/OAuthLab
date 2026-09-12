@@ -11,9 +11,6 @@ using static ConfidentialClient.Controllers.SessionKeys.OAuth;
 
 namespace ConfidentialClient.Controllers;
 
-// A confidential (server-side) OAuth client. Each step of the flow is its own action —
-// Authorize, Callback, ExchangeToken, RefreshToken, FetchResource — and every HTTP call the
-// server makes on the flow's behalf is logged in full as a request/response console.
 public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration config) : Controller
 {
     [HttpGet("/")]

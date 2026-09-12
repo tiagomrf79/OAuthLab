@@ -1,0 +1,7 @@
+## .NET
+bin/
+obj/
+
+## VS / VS Code
+.vs/
+*.user
