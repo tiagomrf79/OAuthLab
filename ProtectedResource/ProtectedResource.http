@@ -1,6 +1,7 @@
-@ProtectedResource_HostAddress = http://localhost:5093
+@ProtectedResource_HostAddress = http://localhost:5002
 
-GET {{ProtectedResource_HostAddress}}/weatherforecast/
+GET {{ProtectedResource_HostAddress}}/resource
 Accept: application/json
+Authorization: Bearer {{accessToken}}
 
 ###

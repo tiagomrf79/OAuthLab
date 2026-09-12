@@ -1,0 +1,32 @@
+@page "/authorize"
+@model AuthorizationServer.Pages.AuthorizeModel
+@{
+    ViewData["Title"] = "Authorize";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <h1>Authorization request</h1>
+        <p><strong>@Model.ClientName</strong> is requesting access to your account.</p>
+
+        <form method="post" asp-page="/Approve">
+            <input type="hidden" name="reqid" value="@Model.ReqId" />
+
+            <h2 class="h5">This will allow @Model.ClientName to:</h2>
+            <ul class="list-group mb-3">
+                @foreach (var s in Model.RequestedScopes)
+                {
+                    <li class="list-group-item">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="scope" value="@s" id="scope-@s" checked />
+                            <label class="form-check-label" for="scope-@s">@s</label>
+                        </div>
+                    </li>
+                }
+            </ul>
+
+            <button type="submit" name="action" value="approve" class="btn btn-primary">Approve</button>
+            <button type="submit" name="action" value="deny" class="btn btn-outline-secondary">Deny</button>
+        </form>
+    </div>
+</div>

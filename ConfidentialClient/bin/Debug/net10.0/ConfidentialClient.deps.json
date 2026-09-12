@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "ConfidentialClient/1.0.0": {
+        "runtime": {
+          "ConfidentialClient.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ConfidentialClient/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

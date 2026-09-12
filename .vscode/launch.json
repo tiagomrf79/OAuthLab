@@ -2,12 +2,57 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Client: Launch in browser",
-      "type": "chrome",
+      "name": "AuthorizationServer",
+      "type": "coreclr",
       "request": "launch",
-      "url": "http://localhost:5000",
-      "webRoot": "${workspaceFolder}/Client",
-      "preLaunchTask": "Client: dev server"
+      "preLaunchTask": "build: AuthorizationServer",
+      "program": "${workspaceFolder}/AuthorizationServer/bin/Debug/net10.0/AuthorizationServer.dll",
+      "cwd": "${workspaceFolder}/AuthorizationServer",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5001"
+      }
+    },
+    {
+      "name": "ProtectedResource",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: ProtectedResource",
+      "program": "${workspaceFolder}/ProtectedResource/bin/Debug/net10.0/ProtectedResource.dll",
+      "cwd": "${workspaceFolder}/ProtectedResource",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5002"
+      }
+    },
+    {
+      "name": "ConfidentialClient",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: ConfidentialClient",
+      "program": "${workspaceFolder}/ConfidentialClient/bin/Debug/net10.0/ConfidentialClient.dll",
+      "cwd": "${workspaceFolder}/ConfidentialClient",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "ConfidentialClient + AuthorizationServer + ProtectedResource",
+      "configurations": ["AuthorizationServer", "ProtectedResource", "ConfidentialClient"],
+      "stopAll": true
     }
   ]
 }

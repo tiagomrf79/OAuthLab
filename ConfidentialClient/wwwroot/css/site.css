@@ -1,0 +1,345 @@
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+}
+
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+  margin-bottom: 60px;
+}
+
+.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
+  color: var(--bs-secondary-color);
+  text-align: end;
+}
+
+.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
+  text-align: start;
+}
+
+/* OAuth client console: status strip, action buttons, request/response log. */
+:root {
+  --oc-text: #6b6375;
+  --oc-text-h: #08060d;
+  --oc-panel-bg: #fafafa;
+  --oc-border: #e5e4e7;
+  --oc-code-bg: #f4f3ec;
+  --oc-accent: #aa3bff;
+  --oc-accent-bg: rgba(170, 59, 255, 0.1);
+  --oc-accent-border: rgba(170, 59, 255, 0.5);
+  --oc-mono: ui-monospace, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --oc-text: #9ca3af;
+    --oc-text-h: #f3f4f6;
+    --oc-panel-bg: #1b1c23;
+    --oc-border: #2e303a;
+    --oc-code-bg: #1f2028;
+    --oc-accent: #c084fc;
+    --oc-accent-bg: rgba(192, 132, 252, 0.15);
+    --oc-accent-border: rgba(192, 132, 252, 0.5);
+  }
+}
+
+.oauth-client-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+}
+
+.oauth-client-layout > form {
+  display: contents;
+}
+
+.oauth-panel {
+  background: var(--oc-panel-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.oauth-panel h2 {
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 16px;
+}
+
+#oauth-config-panel {
+  grid-row: 1 / 3;
+}
+
+.oauth-field-group {
+  margin-bottom: 20px;
+}
+
+.oauth-field-group:last-child {
+  margin-bottom: 0;
+}
+
+.oauth-field-group h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--oc-text);
+  margin: 0 0 10px;
+}
+
+.oauth-field-group dl {
+  margin: 0;
+}
+
+.oauth-field-group dt {
+  font-size: 13px;
+  color: var(--oc-text);
+}
+
+.oauth-field-group dd {
+  margin: 2px 0 10px;
+  font: 13px/1.4 var(--oc-mono);
+  color: var(--oc-text-h);
+  overflow-wrap: anywhere;
+}
+
+.oauth-field-group label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.oauth-field-group label:last-child {
+  margin-bottom: 0;
+}
+
+.oauth-field-group input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font: 13px/1.4 var(--oc-mono);
+  color: var(--oc-text-h);
+  background: white;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+}
+
+.oauth-field-group input:focus-visible {
+  outline: 2px solid var(--oc-accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .oauth-field-group input {
+    background: var(--oc-panel-bg);
+  }
+}
+
+.oauth-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.oauth-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--oc-text-h);
+  background: var(--oc-accent-bg);
+  border: 1px solid var(--oc-accent-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+  text-decoration: none;
+  appearance: none;
+  font: inherit;
+}
+
+.oauth-action-btn:hover {
+  box-shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color: var(--oc-text-h);
+}
+
+.oauth-action-btn:active {
+  transform: translateY(1px);
+}
+
+.oauth-action-btn.secondary {
+  background: transparent;
+  border-color: var(--oc-border);
+}
+
+.oauth-action-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.oauth-action-desc {
+  font-size: 12px;
+  color: var(--oc-text);
+}
+
+.oauth-status-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.oauth-status-item {
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: white;
+}
+
+.oauth-status-item dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--oc-text);
+}
+
+.oauth-status-item dd {
+  margin: 4px 0 0;
+  font-family: var(--oc-mono);
+  font-size: 12px;
+  color: var(--oc-text-h);
+  overflow-wrap: anywhere;
+}
+
+.oauth-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.oauth-console-header h2 {
+  margin: 0;
+}
+
+.oauth-console-body {
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  background: var(--oc-code-bg);
+  padding: 12px;
+  font-family: var(--oc-mono);
+  font-size: 12px;
+}
+
+.oauth-console-placeholder {
+  color: var(--oc-text);
+  margin: 0;
+}
+
+.oauth-log-entry {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--oc-border);
+}
+
+.oauth-log-entry:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.oauth-log-entry-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-family: system-ui, sans-serif;
+}
+
+.oauth-log-title {
+  font-weight: 600;
+  color: var(--oc-accent);
+}
+
+.oauth-log-time {
+  color: var(--oc-text);
+  font-size: 11px;
+}
+
+.oauth-log-block-wrap {
+  margin-top: 6px;
+}
+
+.oauth-log-block-label {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--oc-text);
+  margin-bottom: 2px;
+}
+
+.oauth-log-block {
+  padding: 8px 10px;
+  background: white;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+}
+
+.oauth-log-block-main {
+  font-weight: 600;
+  color: var(--oc-text-h);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.oauth-log-block-headers,
+.oauth-log-block-body {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--oc-border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oauth-log-block-headers {
+  color: var(--oc-text);
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .oauth-status-item,
+  .oauth-log-block {
+    background: var(--oc-panel-bg);
+  }
+}
+
+@media (max-width: 900px) {
+  .oauth-client-layout {
+    grid-template-columns: 1fr;
+  }
+
+  #oauth-config-panel {
+    grid-row: auto;
+  }
+}

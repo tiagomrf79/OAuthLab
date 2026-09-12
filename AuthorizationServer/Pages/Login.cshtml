@@ -1,0 +1,32 @@
+@page "/login"
+@model AuthorizationServer.Pages.LoginModel
+@{
+    ViewData["Title"] = "Log in";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h1>Log in</h1>
+        <p class="text-muted">Sign in as the resource owner to continue.</p>
+
+        @if (Model.Error is not null)
+        {
+            <div class="alert alert-danger">@Model.Error</div>
+        }
+
+        <form method="post">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div class="mb-3">
+                <label asp-for="Username" class="form-label">Username</label>
+                <input asp-for="Username" class="form-control" autofocus />
+            </div>
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label">Password</label>
+                <input asp-for="Password" type="password" class="form-control" />
+            </div>
+            <button type="submit" class="btn btn-primary">Log in</button>
+        </form>
+
+        <p class="text-muted mt-3">Demo user: <code>alice</code> / <code>password</code></p>
+    </div>
+</div>

@@ -1,41 +1,21 @@
-var builder = WebApplication.CreateBuilder(args);
+using System.Net.Http.Headers;
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+var builder = WebApplication.CreateBuilder(args);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+app.UseRouting();
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
+app.MapGet("/resource", (HttpRequest request) =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    if (!AuthenticationHeaderValue.TryParse(request.Headers.Authorization.ToString(), out var authHeader)
+        || !string.Equals(authHeader.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
+        || string.IsNullOrWhiteSpace(authHeader.Parameter))
+    {
+        return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    return Results.Json(new { message = "Hello! This is a protected resource." });
+});
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
