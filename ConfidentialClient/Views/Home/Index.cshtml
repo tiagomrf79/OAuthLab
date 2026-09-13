@@ -78,6 +78,10 @@
                     <span class="oauth-action-title">Call Protected Resource</span>
                     <span class="oauth-action-desc">GET the resource with the access token</span>
                 </button>
+                <button type="submit" formaction="/fetch_resource_auto" class="oauth-action-btn auto">
+                    <span class="oauth-action-title">Fetch Resource (Auto)</span>
+                    <span class="oauth-action-desc">On 401, refresh the token and retry automatically</span>
+                </button>
                 <button type="submit" formaction="/reset" formmethod="get" class="oauth-action-btn secondary">
                     <span class="oauth-action-title">Reset Session</span>
                     <span class="oauth-action-desc">Clear code, tokens and state</span>

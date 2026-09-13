@@ -40,6 +40,9 @@ body {
   --oc-accent: #aa3bff;
   --oc-accent-bg: rgba(170, 59, 255, 0.1);
   --oc-accent-border: rgba(170, 59, 255, 0.5);
+  --oc-auto-accent: #0ea5e9;
+  --oc-auto-accent-bg: rgba(14, 165, 233, 0.1);
+  --oc-auto-accent-border: rgba(14, 165, 233, 0.5);
   --oc-mono: ui-monospace, Consolas, monospace;
 }
 
@@ -53,6 +56,9 @@ body {
     --oc-accent: #c084fc;
     --oc-accent-bg: rgba(192, 132, 252, 0.15);
     --oc-accent-border: rgba(192, 132, 252, 0.5);
+    --oc-auto-accent: #38bdf8;
+    --oc-auto-accent-bg: rgba(56, 189, 248, 0.15);
+    --oc-auto-accent-border: rgba(56, 189, 248, 0.5);
   }
 }
 
@@ -186,6 +192,15 @@ body {
 .oauth-action-btn.secondary {
   background: transparent;
   border-color: var(--oc-border);
+}
+
+.oauth-action-btn.auto {
+  background: var(--oc-auto-accent-bg);
+  border-color: var(--oc-auto-accent-border);
+}
+
+.oauth-action-btn.auto .oauth-action-title {
+  color: var(--oc-auto-accent);
 }
 
 .oauth-action-title {

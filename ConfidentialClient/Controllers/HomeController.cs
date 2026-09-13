@@ -136,29 +136,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
 
-        var refreshToken = HttpContext.Session.GetString(RefreshTokenKey);
-        if (string.IsNullOrEmpty(refreshToken))
-        {
-            TempData["Error"] = "No refresh token in session.";
-            return RedirectToAction(nameof(Index));
-        }
-
-        var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "refresh_token",
-                ["refresh_token"] = refreshToken,
-            }),
-        };
-        request.Headers.Authorization = BasicAuthHeader(cfg);
-
-        var (response, body) = await SendAndLogAsync("Refresh access token", request);
-        if (response.IsSuccessStatusCode)
-        {
-            StoreTokens(Deserialize(body));
-        }
-
+        await RefreshAccessTokenAsync(cfg);
         return RedirectToAction(nameof(Index));
     }
 
@@ -168,19 +146,33 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
 
-        var accessToken = HttpContext.Session.GetString(AccessTokenKey);
-        if (string.IsNullOrEmpty(accessToken))
+        await CallResourceAsync(cfg, "Call protected resource");
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("/fetch_resource_auto")]
+    public async Task<IActionResult> FetchResourceAuto(OAuthClientConfigInput input)
+    {
+        var cfg = BuildConfig(input);
+        SaveConfig(cfg);
+
+        var (initialResponse, _) = await CallResourceAsync(cfg, "Call protected resource (auto)");
+        if (initialResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
         {
-            TempData["Error"] = "No access token in session.";
             return RedirectToAction(nameof(Index));
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, cfg.ResourceEndpoint)
+        if (!await RefreshAccessTokenAsync(cfg))
         {
-            Headers = { Authorization = new AuthenticationHeaderValue("Bearer", accessToken) },
-        };
+            return RedirectToAction(nameof(Index));
+        }
 
-        await SendAndLogAsync("Call protected resource", request);
+        var (retryResponse, _) = await CallResourceAsync(cfg, "Call protected resource (retry after refresh)");
+        if (!retryResponse.IsSuccessStatusCode)
+        {
+            TempData["Error"] = "Resource call still failed after refreshing the access token.";
+        }
+
         return RedirectToAction(nameof(Index));
     }
 
@@ -243,10 +235,57 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
 
     private void ClearOAuthSession()
     {
-        foreach (var key in new[] { StateKey, CodeKey, AccessTokenKey, TokenTypeKey, ExpiresInKey, RefreshTokenKey, ScopeKey })
+        HttpContext.Session.Remove(StateKey);
+        HttpContext.Session.Remove(CodeKey);
+        ClearTokens();
+    }
+
+    private void ClearTokens()
+    {
+        foreach (var key in new[] { AccessTokenKey, TokenTypeKey, ExpiresInKey, RefreshTokenKey, ScopeKey })
         {
             HttpContext.Session.Remove(key);
         }
+    }
+
+    private Task<(HttpResponseMessage Response, string Body)> CallResourceAsync(OAuthClientConfig cfg, string title)
+    {
+        var accessToken = HttpContext.Session.GetString(AccessTokenKey);
+        var request = new HttpRequestMessage(HttpMethod.Get, cfg.ResourceEndpoint);
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        }
+
+        return SendAndLogAsync(title, request);
+    }
+
+    private async Task<bool> RefreshAccessTokenAsync(OAuthClientConfig cfg)
+    {
+        var refreshToken = HttpContext.Session.GetString(RefreshTokenKey);
+        if (!string.IsNullOrEmpty(refreshToken))
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["grant_type"] = "refresh_token",
+                    ["refresh_token"] = refreshToken,
+                }),
+            };
+            request.Headers.Authorization = BasicAuthHeader(cfg);
+
+            var (response, body) = await SendAndLogAsync("Refresh access token", request);
+            if (response.IsSuccessStatusCode)
+            {
+                StoreTokens(Deserialize(body));
+                return true;
+            }
+        }
+
+        ClearTokens();
+        TempData["Error"] = "Unable to refresh the access token — please Authorize again.";
+        return false;
     }
 
     private static AuthenticationHeaderValue BasicAuthHeader(OAuthClientConfig cfg)
