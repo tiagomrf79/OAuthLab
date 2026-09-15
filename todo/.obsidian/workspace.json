@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "1f6bc441c1f37079",
+        "id": "4ad5bffcb439c1a5",
         "type": "tabs",
         "children": [
           {
-            "id": "c4d03f40ba1113e7",
+            "id": "5a874ac23e0150ce",
             "type": "leaf",
             "state": {
               "type": "empty",
@@ -181,8 +181,10 @@
       "bases:Create new base": false
     }
   },
-  "active": "c4d03f40ba1113e7",
+  "active": "5a874ac23e0150ce",
   "lastOpenFiles": [
+    "Delete old access tokens upon refresh.md",
+    "Add option to revoke.md",
     "Investigate action buttons.md.md",
     "Refactor logging.md.md",
     "Hash tokens in DB.md.md",

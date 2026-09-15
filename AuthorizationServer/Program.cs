@@ -68,6 +68,10 @@ app.Run();
 
 static bool TryGetClientCredentials(HttpRequest request, IFormCollection form, out string clientId, out string clientSecret)
 {
+    clientId = "";
+    clientSecret = "";
+
+    var hasHeaderCredentials = false;
     var header = request.Headers.Authorization.ToString();
     if (header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
     {
@@ -77,25 +81,36 @@ static bool TryGetClientCredentials(HttpRequest request, IFormCollection form, o
             var separatorIndex = decoded.IndexOf(':');
             if (separatorIndex < 0)
             {
-                clientId = "";
-                clientSecret = "";
                 return false;
             }
 
             clientId = Uri.UnescapeDataString(decoded[..separatorIndex]);
             clientSecret = Uri.UnescapeDataString(decoded[(separatorIndex + 1)..]);
-            return true;
+            hasHeaderCredentials = true;
         }
         catch (FormatException)
         {
-            clientId = "";
-            clientSecret = "";
             return false;
         }
     }
 
-    clientId = form["client_id"].ToString();
-    clientSecret = form["client_secret"].ToString();
+    var bodyClientId = form["client_id"].ToString();
+    if (!string.IsNullOrEmpty(bodyClientId))
+    {
+        if (hasHeaderCredentials)
+        {
+            // The client authenticated with both the Authorization header and body fields at once —
+            // reject rather than silently pick one, per RFC 6749 §2.3.1 ("the client MUST NOT use
+            // more than one authentication method in each request").
+            clientId = "";
+            clientSecret = "";
+            return false;
+        }
+
+        clientId = bodyClientId;
+        clientSecret = form["client_secret"].ToString();
+    }
+
     return !string.IsNullOrEmpty(clientId);
 }
 
@@ -104,6 +119,7 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
     var code = form["code"].ToString();
     var redirectUri = form["redirect_uri"].ToString();
 
+    // Remove the code on first use, win or lose — a stolen code should be burned, not reusable.
     if (!store.AuthorizationCodes.TryRemove(code, out var authCode)
         || authCode.ClientId != client.ClientId
         || authCode.RedirectUri != redirectUri
@@ -146,8 +162,16 @@ static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMe
 {
     var refreshTokenValue = form["refresh_token"].ToString();
 
-    if (!store.RefreshTokens.TryGetValue(refreshTokenValue, out var refreshToken) || refreshToken.ClientId != client.ClientId)
+    if (!store.RefreshTokens.TryGetValue(refreshTokenValue, out var refreshToken))
     {
+        return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
+    }
+
+    if (refreshToken.ClientId != client.ClientId)
+    {
+        // A refresh token presented by a client other than the one it was issued to has likely
+        // been stolen — burn it rather than just refusing this one request.
+        store.RefreshTokens.TryRemove(refreshTokenValue, out _);
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 

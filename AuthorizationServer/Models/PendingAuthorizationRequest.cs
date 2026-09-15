@@ -4,7 +4,7 @@ namespace AuthorizationServer.Models;
 // and the decision (POST /approve).
 public class PendingAuthorizationRequest
 {
-    public required string ResponseType { get; init; }
+    public required string ResponseType { get; init; } //TBR: remove?
     public required string ClientId { get; init; }
     public required string RedirectUri { get; init; }
     public required string Scope { get; init; }
