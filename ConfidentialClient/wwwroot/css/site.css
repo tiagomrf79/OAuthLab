@@ -162,6 +162,29 @@ body {
   margin-bottom: 24px;
 }
 
+.oauth-operation-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--oc-text-h);
+}
+
+.oauth-operation-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--oc-text);
+}
+
+.oauth-operation-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 .oauth-action-btn {
   display: flex;
   flex-direction: column;

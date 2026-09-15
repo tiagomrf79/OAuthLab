@@ -16,7 +16,7 @@ public class InMemoryStore
             ClientSecret = "confidential-client-secret",
             Name = "Confidential Client",
             RedirectUris = ["http://localhost:5000/callback"],
-            AllowedScopes = ["foo"],
+            AllowedScopes = ["read", "write", "delete"],
         },
     ];
 

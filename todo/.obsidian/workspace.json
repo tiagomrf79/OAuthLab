@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "c81146c26813c547",
+        "id": "1f6bc441c1f37079",
         "type": "tabs",
         "children": [
           {
-            "id": "a7840627d0abb8ab",
+            "id": "c4d03f40ba1113e7",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Investigate if action buttons should be removed.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Investigate if action buttons should be removed"
+              "title": "New tab"
             }
           }
         ]
@@ -99,7 +95,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Investigate if action buttons should be removed.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -118,7 +113,6 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Investigate if action buttons should be removed.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -161,7 +155,6 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Investigate if action buttons should be removed.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -188,10 +181,13 @@
       "bases:Create new base": false
     }
   },
-  "active": "a7840627d0abb8ab",
+  "active": "c4d03f40ba1113e7",
   "lastOpenFiles": [
+    "Investigate action buttons.md.md",
+    "Refactor logging.md.md",
+    "Hash tokens in DB.md.md",
+    "Add token introspection or JWT info.md.md",
     "Investigate if an uninterrupted flow button should be added.md",
-    "Investigate if action buttons should be removed.md",
     "Welcome.md"
   ]
 }

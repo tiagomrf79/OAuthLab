@@ -74,17 +74,26 @@
                     <span class="oauth-action-title">Refresh Access Token</span>
                     <span class="oauth-action-desc">POST the refresh token to the token endpoint</span>
                 </button>
+                <button type="submit" formaction="/reset" formmethod="get" class="oauth-action-btn secondary">
+                    <span class="oauth-action-title">Reset Session</span>
+                    <span class="oauth-action-desc">Clear code, tokens and state</span>
+                </button>
+            </div>
+
+            <div class="oauth-operation-group">
+                <span class="oauth-operation-label">Operation</span>
+                <label><input type="radio" name="operation" value="read" checked /> Read</label>
+                <label><input type="radio" name="operation" value="write" /> Write</label>
+                <label><input type="radio" name="operation" value="delete" /> Delete</label>
+            </div>
+            <div class="oauth-actions-grid">
                 <button type="submit" formaction="/fetch_resource" class="oauth-action-btn">
                     <span class="oauth-action-title">Call Protected Resource</span>
-                    <span class="oauth-action-desc">GET the resource with the access token</span>
+                    <span class="oauth-action-desc">Call the resource endpoint for the selected operation</span>
                 </button>
                 <button type="submit" formaction="/fetch_resource_auto" class="oauth-action-btn auto">
                     <span class="oauth-action-title">Fetch Resource (Auto)</span>
                     <span class="oauth-action-desc">On 401, refresh the token and retry automatically</span>
-                </button>
-                <button type="submit" formaction="/reset" formmethod="get" class="oauth-action-btn secondary">
-                    <span class="oauth-action-title">Reset Session</span>
-                    <span class="oauth-action-desc">Clear code, tokens and state</span>
                 </button>
             </div>
 

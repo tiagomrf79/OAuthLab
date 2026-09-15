@@ -1,0 +1,3 @@
+We can store a hash of the token value instead of the value itself, similar to how user passwords are usually stored. When the token needs to be looked up, its value is hashed again and compared against the contents of the database.
+
+We can instead add a unique identifier inside our token and sign it with the server’s key, storing only the unique identifier in the database. When the token must be looked up, the resource server can validate the signature, parse the token to find the identifier, and look up the identifier in the database to find the token’s information.

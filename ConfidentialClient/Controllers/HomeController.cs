@@ -141,22 +141,24 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     }
 
     [HttpPost("/fetch_resource")]
-    public async Task<IActionResult> FetchResource(OAuthClientConfigInput input)
+    public async Task<IActionResult> FetchResource(OAuthClientConfigInput input, string? operation)
     {
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
 
-        await CallResourceAsync(cfg, "Call protected resource");
+        var op = NormalizeOperation(operation);
+        await CallResourceAsync(cfg, op, $"Call protected resource ({op})");
         return RedirectToAction(nameof(Index));
     }
 
     [HttpPost("/fetch_resource_auto")]
-    public async Task<IActionResult> FetchResourceAuto(OAuthClientConfigInput input)
+    public async Task<IActionResult> FetchResourceAuto(OAuthClientConfigInput input, string? operation)
     {
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
+        var op = NormalizeOperation(operation);
 
-        var (initialResponse, _) = await CallResourceAsync(cfg, "Call protected resource (auto)");
+        var (initialResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, auto)");
         if (initialResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
         {
             return RedirectToAction(nameof(Index));
@@ -167,7 +169,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             return RedirectToAction(nameof(Index));
         }
 
-        var (retryResponse, _) = await CallResourceAsync(cfg, "Call protected resource (retry after refresh)");
+        var (retryResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, retry after refresh)");
         if (!retryResponse.IsSuccessStatusCode)
         {
             TempData["Error"] = "Resource call still failed after refreshing the access token.";
@@ -248,10 +250,22 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         }
     }
 
-    private Task<(HttpResponseMessage Response, string Body)> CallResourceAsync(OAuthClientConfig cfg, string title)
+    // Each scope maps to its own sub-path and HTTP verb on the resource server (read/GET,
+    // write/POST, delete/DELETE) — see ProtectedResource/Program.cs.
+    private static readonly Dictionary<string, HttpMethod> OperationMethods = new()
+    {
+        ["read"] = HttpMethod.Get,
+        ["write"] = HttpMethod.Post,
+        ["delete"] = HttpMethod.Delete,
+    };
+
+    private static string NormalizeOperation(string? operation) =>
+        operation is not null && OperationMethods.ContainsKey(operation) ? operation : "read";
+
+    private Task<(HttpResponseMessage Response, string Body)> CallResourceAsync(OAuthClientConfig cfg, string operation, string title)
     {
         var accessToken = HttpContext.Session.GetString(AccessTokenKey);
-        var request = new HttpRequestMessage(HttpMethod.Get, cfg.ResourceEndpoint);
+        var request = new HttpRequestMessage(OperationMethods[operation], $"{cfg.ResourceEndpoint}/{operation}");
         if (!string.IsNullOrEmpty(accessToken))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
