@@ -1,181 +1,24 @@
-@model ConfidentialClient.Models.ClientViewModel
-@using ConfidentialClient.Models
 @{
     ViewData["Title"] = "Confidential Client";
-
-    string RenderMain(LogBlock b) => b.Method is not null ? $"{b.Method} {b.Url}" : $"{b.Status} {b.StatusText}";
-    string RenderHeaders(LogBlock b) => (b.Headers is null || b.Headers.Count == 0) ? "(no headers)" : string.Join("\n", b.Headers.Select(h => $"{h.Key}: {h.Value}"));
-    string RenderBody(LogBlock b) => string.IsNullOrEmpty(b.Body) ? "(empty body)" : b.Body;
 }
 
 <header class="text-center mb-4">
     <h1 class="display-6">OAuth2 Confidential Client</h1>
-    <p class="text-muted">Authorization Code flow playground</p>
+    <p class="text-muted">A playground for exercising OAuth 2.0 grant types against the local Authorization Server</p>
 </header>
 
 <div class="oauth-client-layout">
-    <form method="post">
-        <section class="oauth-panel" id="oauth-config-panel">
-            <h2>Configuration</h2>
-
-            <div class="oauth-field-group">
-                <h3>Authorization Server</h3>
-                <label>
-                    Authorize endpoint
-                    <input type="text" name="authorizeEndpoint" value="@Model.Config.AuthorizeEndpoint" />
-                </label>
-                <label>
-                    Token endpoint
-                    <input type="text" name="tokenEndpoint" value="@Model.Config.TokenEndpoint" />
-                </label>
-            </div>
-
-            <div class="oauth-field-group">
-                <h3>Protected Resource</h3>
-                <label>
-                    Resource endpoint
-                    <input type="text" name="resourceEndpoint" value="@Model.Config.ResourceEndpoint" />
-                </label>
-            </div>
-
-            <div class="oauth-field-group">
-                <h3>Client</h3>
-                <label>
-                    Client ID
-                    <input type="text" name="clientId" value="@Model.Config.ClientId" />
-                </label>
-                <label>
-                    Client secret
-                    <input type="password" name="clientSecret" value="@Model.Config.ClientSecret" />
-                </label>
-                <label>
-                    Redirect URI
-                    <input type="text" name="redirectUri" value="@Model.Config.RedirectUri" />
-                </label>
-                <label>
-                    Scope
-                    <input type="text" name="scope" value="@Model.Config.Scope" />
-                </label>
-            </div>
-        </section>
-
-        <section class="oauth-panel" id="oauth-actions-panel">
-            <h2>Actions</h2>
-            <div class="oauth-actions-grid">
-                <button type="submit" formaction="/authorize" class="oauth-action-btn">
-                    <span class="oauth-action-title">Start Authorization Request</span>
-                    <span class="oauth-action-desc">Redirect to the authorize endpoint</span>
-                </button>
-                <button type="submit" formaction="/exchange_token" class="oauth-action-btn">
-                    <span class="oauth-action-title">Exchange Code for Tokens</span>
-                    <span class="oauth-action-desc">POST the authorization code to the token endpoint</span>
-                </button>
-                <button type="submit" formaction="/refresh_token" class="oauth-action-btn">
-                    <span class="oauth-action-title">Refresh Access Token</span>
-                    <span class="oauth-action-desc">POST the refresh token to the token endpoint</span>
-                </button>
-                <button type="submit" formaction="/reset" formmethod="get" class="oauth-action-btn secondary">
-                    <span class="oauth-action-title">Reset Session</span>
-                    <span class="oauth-action-desc">Clear code, tokens and state</span>
-                </button>
-            </div>
-
-            <div class="oauth-operation-group">
-                <span class="oauth-operation-label">Operation</span>
-                <label><input type="radio" name="operation" value="read" checked /> Read</label>
-                <label><input type="radio" name="operation" value="write" /> Write</label>
-                <label><input type="radio" name="operation" value="delete" /> Delete</label>
-            </div>
-            <div class="oauth-actions-grid">
-                <button type="submit" formaction="/fetch_resource" class="oauth-action-btn">
-                    <span class="oauth-action-title">Call Protected Resource</span>
-                    <span class="oauth-action-desc">Call the resource endpoint for the selected operation</span>
-                </button>
-                <button type="submit" formaction="/fetch_resource_auto" class="oauth-action-btn auto">
-                    <span class="oauth-action-title">Fetch Resource (Auto)</span>
-                    <span class="oauth-action-desc">On 401, refresh the token and retry automatically</span>
-                </button>
-            </div>
-
-            @if (Model.Error is not null)
-            {
-                <p class="notice alert alert-warning">@Model.Error</p>
-            }
-
-            <h2>Session State</h2>
-            <dl class="oauth-status-strip">
-                <div class="oauth-status-item">
-                    <dt>State</dt>
-                    <dd>@(Model.State ?? "—")</dd>
-                </div>
-                <div class="oauth-status-item">
-                    <dt>Authorization code</dt>
-                    <dd>@(Model.Code ?? "—")</dd>
-                </div>
-                <div class="oauth-status-item">
-                    <dt>Access token</dt>
-                    <dd>@(Model.AccessToken ?? "—")</dd>
-                </div>
-                <div class="oauth-status-item">
-                    <dt>Token type</dt>
-                    <dd>@(Model.TokenType ?? "—")</dd>
-                </div>
-                <div class="oauth-status-item">
-                    <dt>Expires in</dt>
-                    <dd>@(Model.ExpiresIn ?? "—")</dd>
-                </div>
-                <div class="oauth-status-item">
-                    <dt>Refresh token</dt>
-                    <dd>@(Model.RefreshToken ?? "—")</dd>
-                </div>
-            </dl>
-        </section>
-    </form>
-
-    <section class="oauth-panel" id="oauth-console-panel">
-        <div class="oauth-console-header">
-            <h2>Request / Response Log</h2>
-            <a class="oauth-action-btn secondary" href="/clear_log">Clear</a>
-        </div>
-        <div class="oauth-console-body">
-            @if (Model.Logs.Count == 0)
-            {
-                <p class="oauth-console-placeholder">No requests yet.</p>
-            }
-            else
-            {
-                @foreach (var entry in Model.Logs)
-                {
-                    <div class="oauth-log-entry">
-                        <div class="oauth-log-entry-header">
-                            <span class="oauth-log-title">@entry.Title</span>
-                            <span class="oauth-log-time">@entry.Time</span>
-                        </div>
-                        @if (entry.Request is not null)
-                        {
-                            <div class="oauth-log-block-wrap">
-                                <span class="oauth-log-block-label">Request</span>
-                                <div class="oauth-log-block">
-                                    <p class="oauth-log-block-main">@RenderMain(entry.Request)</p>
-                                    <pre class="oauth-log-block-headers">@RenderHeaders(entry.Request)</pre>
-                                    <pre class="oauth-log-block-body">@RenderBody(entry.Request)</pre>
-                                </div>
-                            </div>
-                        }
-                        @if (entry.Response is not null)
-                        {
-                            <div class="oauth-log-block-wrap">
-                                <span class="oauth-log-block-label">Response</span>
-                                <div class="oauth-log-block">
-                                    <p class="oauth-log-block-main">@RenderMain(entry.Response)</p>
-                                    <pre class="oauth-log-block-headers">@RenderHeaders(entry.Response)</pre>
-                                    <pre class="oauth-log-block-body">@RenderBody(entry.Response)</pre>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-            }
+    <section class="oauth-panel">
+        <h2>Flows</h2>
+        <div class="oauth-actions-grid">
+            <a asp-action="AuthorizationCode" class="oauth-action-btn">
+                <span class="oauth-action-title">Authorization Code</span>
+                <span class="oauth-action-desc">User signs in at the AS; the client exchanges a code for tokens</span>
+            </a>
+            <a asp-action="ClientCredentials" class="oauth-action-btn">
+                <span class="oauth-action-title">Client Credentials</span>
+                <span class="oauth-action-desc">The client authenticates directly with its own credentials — no user involved</span>
+            </a>
         </div>
     </section>
 </div>

@@ -11,4 +11,8 @@ public class OAuthClientConfigInput
     public string? ClientSecret { get; set; }
     public string? RedirectUri { get; set; }
     public string? Scope { get; set; }
+
+    // Which page an action shared between flow pages (fetch resource, reset, clear log) should
+    // redirect back to — set from a hidden field on each flow's form.
+    public string? ReturnTo { get; set; }
 }

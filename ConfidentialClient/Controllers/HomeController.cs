@@ -16,6 +16,12 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     [HttpGet("/")]
     public IActionResult Index()
     {
+        return View();
+    }
+
+    [HttpGet("/authorization-code")]
+    public IActionResult AuthorizationCode()
+    {
         return View(BuildViewModel());
     }
 
@@ -63,7 +69,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
                     Body = $"error: {error}\ndescription: {error_description ?? "(none)"}",
                 },
             });
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(AuthorizationCode));
         }
 
         var expectedState = HttpContext.Session.GetString(StateKey);
@@ -79,7 +85,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
                     Body = $"expected state: {expectedState}\nreceived state: {state}",
                 },
             });
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(AuthorizationCode));
         }
 
         HttpContext.Session.SetString(CodeKey, code ?? "");
@@ -94,7 +100,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             },
         });
 
-        return RedirectToAction(nameof(Index));
+        return RedirectToAction(nameof(AuthorizationCode));
     }
 
     [HttpPost("/exchange_token")]
@@ -107,7 +113,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         if (string.IsNullOrEmpty(code))
         {
             TempData["Error"] = "No authorization code in session — run \"Start Authorization Request\" first.";
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(AuthorizationCode));
         }
 
         var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
@@ -127,7 +133,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             StoreTokens(Deserialize(body));
         }
 
-        return RedirectToAction(nameof(Index));
+        return RedirectToAction(nameof(AuthorizationCode));
     }
 
     [HttpPost("/refresh_token")]
@@ -137,7 +143,38 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         SaveConfig(cfg);
 
         await RefreshAccessTokenAsync(cfg);
-        return RedirectToAction(nameof(Index));
+        return RedirectToAction(nameof(AuthorizationCode));
+    }
+
+    [HttpGet("/client-credentials")]
+    public IActionResult ClientCredentials()
+    {
+        return View(BuildViewModel());
+    }
+
+    [HttpPost("/client_credentials_token")]
+    public async Task<IActionResult> ClientCredentialsToken(OAuthClientConfigInput input)
+    {
+        var cfg = BuildConfig(input);
+        SaveConfig(cfg);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "client_credentials",
+                ["scope"] = cfg.Scope,
+            }),
+        };
+        request.Headers.Authorization = BasicAuthHeader(cfg);
+
+        var (response, body) = await SendAndLogAsync("Request access token (client credentials)", request);
+        if (response.IsSuccessStatusCode)
+        {
+            StoreTokens(Deserialize(body));
+        }
+
+        return RedirectToAction(nameof(ClientCredentials));
     }
 
     [HttpPost("/fetch_resource")]
@@ -148,7 +185,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
 
         var op = NormalizeOperation(operation);
         await CallResourceAsync(cfg, op, $"Call protected resource ({op})");
-        return RedirectToAction(nameof(Index));
+        return RedirectToReturnPage(input.ReturnTo);
     }
 
     [HttpPost("/fetch_resource_auto")]
@@ -161,12 +198,12 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         var (initialResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, auto)");
         if (initialResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
         {
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(AuthorizationCode));
         }
 
         if (!await RefreshAccessTokenAsync(cfg))
         {
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(AuthorizationCode));
         }
 
         var (retryResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, retry after refresh)");
@@ -175,21 +212,21 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             TempData["Error"] = "Resource call still failed after refreshing the access token.";
         }
 
-        return RedirectToAction(nameof(Index));
+        return RedirectToAction(nameof(AuthorizationCode));
     }
 
     [HttpGet("/reset")]
-    public IActionResult Reset()
+    public IActionResult Reset(string? returnTo)
     {
         ClearOAuthSession();
-        return RedirectToAction(nameof(Index));
+        return RedirectToReturnPage(returnTo);
     }
 
     [HttpGet("/clear_log")]
-    public IActionResult ClearLog()
+    public IActionResult ClearLog(string? returnTo)
     {
         HttpContext.Session.Remove(LogKey);
-        return RedirectToAction(nameof(Index));
+        return RedirectToReturnPage(returnTo);
     }
 
     public IActionResult Privacy()
@@ -234,6 +271,11 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
 
         return (response, responseBody);
     }
+
+    private IActionResult RedirectToReturnPage(string? returnTo) =>
+        returnTo == nameof(ClientCredentials)
+            ? RedirectToAction(nameof(ClientCredentials))
+            : RedirectToAction(nameof(AuthorizationCode));
 
     private void ClearOAuthSession()
     {

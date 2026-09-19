@@ -60,6 +60,7 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
     {
         "authorization_code" => HandleAuthorizationCodeGrant(form, client, store),
         "refresh_token" => HandleRefreshTokenGrant(form, client, store),
+        "client_credentials" => HandleClientCredentialsGrant(form, client, store),
         _ => Results.Json(new { error = "unsupported_grant_type" }, statusCode: 400),
     };
 });
@@ -155,6 +156,34 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         expires_in = (int)expiresIn.TotalSeconds,
         refresh_token = refreshToken,
         scope = authCode.Scope,
+    });
+}
+
+static IResult HandleClientCredentialsGrant(IFormCollection form, Client client, InMemoryStore store)
+{
+    var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
+
+    var accessToken = InMemoryStore.GenerateToken();
+    var expiresIn = TimeSpan.FromHours(1);
+
+    store.AccessTokens[accessToken] = new AccessToken
+    {
+        Token = accessToken,
+        ClientId = client.ClientId,
+        // No end user in this grant — the client is acting on its own behalf, so it is its own subject.
+        Subject = client.ClientId,
+        Scope = scope,
+        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
+    };
+
+    // No refresh token per RFC 6749 §4.4.3 — the client can just request a new access token with
+    // its credentials again, since it authenticates directly on every call.
+    return Results.Json(new
+    {
+        access_token = accessToken,
+        token_type = "Bearer",
+        expires_in = (int)expiresIn.TotalSeconds,
+        scope,
     });
 }
 
