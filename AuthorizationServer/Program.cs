@@ -61,6 +61,7 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
         "authorization_code" => HandleAuthorizationCodeGrant(form, client, store),
         "refresh_token" => HandleRefreshTokenGrant(form, client, store),
         "client_credentials" => HandleClientCredentialsGrant(form, client, store),
+        "password" => HandlePasswordGrant(form, client, store),
         _ => Results.Json(new { error = "unsupported_grant_type" }, statusCode: 400),
     };
 });
@@ -183,6 +184,49 @@ static IResult HandleClientCredentialsGrant(IFormCollection form, Client client,
         access_token = accessToken,
         token_type = "Bearer",
         expires_in = (int)expiresIn.TotalSeconds,
+        scope,
+    });
+}
+
+static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemoryStore store)
+{
+    var username = form["username"].ToString();
+    var password = form["password"].ToString();
+
+    var user = store.FindUser(username, password);
+    if (user is null)
+    {
+        return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
+    }
+
+    var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
+
+    var accessToken = InMemoryStore.GenerateToken();
+    var refreshToken = InMemoryStore.GenerateToken();
+    var expiresIn = TimeSpan.FromHours(1);
+
+    store.AccessTokens[accessToken] = new AccessToken
+    {
+        Token = accessToken,
+        ClientId = client.ClientId,
+        Subject = user.Subject,
+        Scope = scope,
+        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
+    };
+    store.RefreshTokens[refreshToken] = new RefreshToken
+    {
+        Token = refreshToken,
+        ClientId = client.ClientId,
+        Subject = user.Subject,
+        Scope = scope,
+    };
+
+    return Results.Json(new
+    {
+        access_token = accessToken,
+        token_type = "Bearer",
+        expires_in = (int)expiresIn.TotalSeconds,
+        refresh_token = refreshToken,
         scope,
     });
 }

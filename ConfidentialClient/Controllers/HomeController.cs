@@ -143,7 +143,40 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         SaveConfig(cfg);
 
         await RefreshAccessTokenAsync(cfg);
-        return RedirectToAction(nameof(AuthorizationCode));
+        return RedirectToReturnPage(input.ReturnTo);
+    }
+
+    [HttpGet("/password")]
+    public IActionResult Password()
+    {
+        return View(BuildViewModel());
+    }
+
+    [HttpPost("/password_token")]
+    public async Task<IActionResult> PasswordToken(OAuthClientConfigInput input)
+    {
+        var cfg = BuildConfig(input);
+        SaveConfig(cfg);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "password",
+                ["username"] = cfg.Username,
+                ["password"] = cfg.Password,
+                ["scope"] = cfg.Scope,
+            }),
+        };
+        request.Headers.Authorization = BasicAuthHeader(cfg);
+
+        var (response, body) = await SendAndLogAsync("Request access token (resource owner password credentials)", request);
+        if (response.IsSuccessStatusCode)
+        {
+            StoreTokens(Deserialize(body));
+        }
+
+        return RedirectToAction(nameof(Password));
     }
 
     [HttpGet("/client-credentials")]
@@ -198,12 +231,12 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         var (initialResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, auto)");
         if (initialResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
         {
-            return RedirectToAction(nameof(AuthorizationCode));
+            return RedirectToReturnPage(input.ReturnTo);
         }
 
         if (!await RefreshAccessTokenAsync(cfg))
         {
-            return RedirectToAction(nameof(AuthorizationCode));
+            return RedirectToReturnPage(input.ReturnTo);
         }
 
         var (retryResponse, _) = await CallResourceAsync(cfg, op, $"Call protected resource ({op}, retry after refresh)");
@@ -212,7 +245,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             TempData["Error"] = "Resource call still failed after refreshing the access token.";
         }
 
-        return RedirectToAction(nameof(AuthorizationCode));
+        return RedirectToReturnPage(input.ReturnTo);
     }
 
     [HttpGet("/reset")]
@@ -272,10 +305,12 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         return (response, responseBody);
     }
 
-    private IActionResult RedirectToReturnPage(string? returnTo) =>
-        returnTo == nameof(ClientCredentials)
-            ? RedirectToAction(nameof(ClientCredentials))
-            : RedirectToAction(nameof(AuthorizationCode));
+    private IActionResult RedirectToReturnPage(string? returnTo) => returnTo switch
+    {
+        nameof(ClientCredentials) => RedirectToAction(nameof(ClientCredentials)),
+        nameof(Password) => RedirectToAction(nameof(Password)),
+        _ => RedirectToAction(nameof(AuthorizationCode)),
+    };
 
     private void ClearOAuthSession()
     {
@@ -361,6 +396,8 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         ClientSecret = GetSetting(CfgClientSecretKey, "Client:ClientSecret"),
         RedirectUri = GetSetting(CfgRedirectUriKey, "Client:RedirectUri"),
         Scope = GetSetting(CfgScopeKey, "Client:Scope"),
+        Username = GetSetting(CfgUsernameKey, "ResourceOwner:Username"),
+        Password = GetSetting(CfgPasswordKey, "ResourceOwner:Password"),
     };
 
     private string GetSetting(string sessionKey, string configKey) =>
@@ -377,6 +414,8 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         ClientSecret = input.ClientSecret ?? "",
         RedirectUri = input.RedirectUri ?? "",
         Scope = input.Scope ?? "",
+        Username = input.Username ?? "",
+        Password = input.Password ?? "",
     };
 
     // Persisted so the values used to kick off /authorize are still there once the browser comes
@@ -390,6 +429,8 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         HttpContext.Session.SetString(CfgClientSecretKey, cfg.ClientSecret);
         HttpContext.Session.SetString(CfgRedirectUriKey, cfg.RedirectUri);
         HttpContext.Session.SetString(CfgScopeKey, cfg.Scope);
+        HttpContext.Session.SetString(CfgUsernameKey, cfg.Username);
+        HttpContext.Session.SetString(CfgPasswordKey, cfg.Password);
     }
 
     private void StoreTokens(TokenResponse? token)

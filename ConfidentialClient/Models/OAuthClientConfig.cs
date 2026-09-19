@@ -12,4 +12,6 @@ public record OAuthClientConfig
     public required string ClientSecret { get; init; }
     public required string RedirectUri { get; init; }
     public required string Scope { get; init; }
+    public required string Username { get; init; }
+    public required string Password { get; init; }
 }

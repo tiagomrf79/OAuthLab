@@ -17,6 +17,8 @@
 <div class="oauth-client-layout">
     <form method="post">
         <input type="hidden" name="returnTo" value="AuthorizationCode" />
+        <input type="hidden" name="username" value="@Model.Config.Username" />
+        <input type="hidden" name="password" value="@Model.Config.Password" />
         <section class="oauth-panel" id="oauth-config-panel">
             <h2>Configuration</h2>
 

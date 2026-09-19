@@ -23,5 +23,7 @@ internal static class SessionKeys
         public const string CfgClientSecretKey = "cfg.client_secret";
         public const string CfgRedirectUriKey = "cfg.redirect_uri";
         public const string CfgScopeKey = "cfg.scope";
+        public const string CfgUsernameKey = "cfg.username";
+        public const string CfgPasswordKey = "cfg.password";
     }
 }
