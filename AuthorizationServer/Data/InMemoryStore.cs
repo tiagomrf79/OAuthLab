@@ -18,6 +18,17 @@ public class InMemoryStore
             RedirectUris = ["http://localhost:5000/callback"],
             AllowedScopes = ["read", "write", "delete"],
         },
+        new Client
+        {
+            // No secret — this is the implicit-grant public client (PublicClient); it can't keep
+            // one confidential in shipped browser JS. Redirect URI matches Vite's default dev
+            // port (5173) — update this (and PublicClient's VITE_CLIENT_ID/.env) if that changes.
+            ClientId = "public-client",
+            ClientSecret = "",
+            Name = "Public Client",
+            RedirectUris = ["http://localhost:5173/"],
+            AllowedScopes = ["read", "write", "delete"],
+        },
     ];
 
     public List<OAuthUser> Users { get; } =

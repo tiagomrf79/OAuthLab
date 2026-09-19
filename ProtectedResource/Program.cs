@@ -2,9 +2,18 @@ using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// PublicClient calls this endpoint directly from browser JS (unlike ConfidentialClient, which
+// calls it server-to-server), so the browser enforces CORS. Vite's dev port can shift, so any
+// origin is allowed here rather than pinning one — this is a teaching sandbox, not production.
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+});
+
 var app = builder.Build();
 
 app.UseRouting();
+app.UseCors();
 
 app.MapGet("/resource/read", (HttpRequest request) => HandleAsync(request, "Read op executed."));
 app.MapPost("/resource/write", (HttpRequest request) => HandleAsync(request, "Write op executed."));

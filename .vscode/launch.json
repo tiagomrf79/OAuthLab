@@ -46,12 +46,24 @@
         "action": "openExternally",
         "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
       }
+    },
+    {
+      "name": "PublicClient",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm.cmd run dev",
+      "cwd": "${workspaceFolder}/PublicClient"
     }
   ],
   "compounds": [
     {
       "name": "ConfidentialClient + AuthorizationServer + ProtectedResource",
       "configurations": ["AuthorizationServer", "ProtectedResource", "ConfidentialClient"],
+      "stopAll": true
+    },
+    {
+      "name": "PublicClient + AuthorizationServer + ProtectedResource",
+      "configurations": ["AuthorizationServer", "ProtectedResource", "PublicClient"],
       "stopAll": true
     }
   ]

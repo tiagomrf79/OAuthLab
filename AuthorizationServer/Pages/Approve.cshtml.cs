@@ -15,14 +15,21 @@ public class ApproveModel(InMemoryStore store) : PageModel
             return BadRequest("No matching authorization request.");
         }
 
+        // The implicit grant reports both its token and its errors via the fragment (see
+        // OAuthRedirect.BuildFragment); the authorization code grant keeps using the query string.
+        string BuildRedirectUrl(Dictionary<string, string?> parameters) =>
+            pending.ResponseType == "token"
+                ? OAuthRedirect.BuildFragment(pending.RedirectUri, parameters, pending.State)
+                : OAuthRedirect.Build(pending.RedirectUri, parameters, pending.State);
+
         if (action != "approve")
         {
-            return Redirect(OAuthRedirect.Build(pending.RedirectUri, new() { ["error"] = "access_denied" }, pending.State));
+            return Redirect(BuildRedirectUrl(new() { ["error"] = "access_denied" }));
         }
 
-        if (pending.ResponseType != "code")
+        if (pending.ResponseType != "code" && pending.ResponseType != "token")
         {
-            return Redirect(OAuthRedirect.Build(pending.RedirectUri, new() { ["error"] = "unsupported_response_type" }, pending.State));
+            return Redirect(BuildRedirectUrl(new() { ["error"] = "unsupported_response_type" }));
         }
 
         var client = store.FindClient(pending.ClientId);
@@ -34,21 +41,47 @@ public class ApproveModel(InMemoryStore store) : PageModel
         var grantedScopes = (scope ?? []).Intersect(client.AllowedScopes).ToArray();
         if (grantedScopes.Length == 0)
         {
-            return Redirect(OAuthRedirect.Build(pending.RedirectUri, new() { ["error"] = "invalid_scope" }, pending.State));
+            return Redirect(BuildRedirectUrl(new() { ["error"] = "invalid_scope" }));
         }
 
         var subject = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var grantedScope = string.Join(' ', grantedScopes);
+
+        if (pending.ResponseType == "token")
+        {
+            // No refresh token here — RFC 6749 §4.2.2 doesn't define one for the implicit grant,
+            // and there'd be no way to redeem it later without a client secret to authenticate with.
+            var accessToken = InMemoryStore.GenerateToken();
+            var expiresIn = TimeSpan.FromHours(1);
+            store.AccessTokens[accessToken] = new AccessToken
+            {
+                Token = accessToken,
+                ClientId = pending.ClientId,
+                Subject = subject,
+                Scope = grantedScope,
+                ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
+            };
+
+            return Redirect(BuildRedirectUrl(new()
+            {
+                ["access_token"] = accessToken,
+                ["token_type"] = "Bearer",
+                ["expires_in"] = ((int)expiresIn.TotalSeconds).ToString(),
+                ["scope"] = grantedScope,
+            }));
+        }
+
         var code = InMemoryStore.GenerateToken(16);
         store.AuthorizationCodes[code] = new AuthorizationCode
         {
             Code = code,
             ClientId = pending.ClientId,
             RedirectUri = pending.RedirectUri,
-            Scope = string.Join(' ', grantedScopes),
+            Scope = grantedScope,
             Subject = subject,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(180),
         };
 
-        return Redirect(OAuthRedirect.Build(pending.RedirectUri, new() { ["code"] = code }, pending.State));
+        return Redirect(BuildRedirectUrl(new() { ["code"] = code }));
     }
 }
