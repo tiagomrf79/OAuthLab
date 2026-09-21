@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NativeClient.Pages.AuthorizationCodePage"
+             Title="Authorization Code">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="14">
+
+            <Label Text="Configuration" FontSize="18" FontAttributes="Bold" />
+
+            <Label Text="Authorize endpoint" />
+            <Entry x:Name="AuthorizeEndpointEntry" />
+
+            <Label Text="Token endpoint" />
+            <Entry x:Name="TokenEndpointEntry" />
+
+            <Label Text="Resource endpoint" />
+            <Entry x:Name="ResourceEndpointEntry" />
+
+            <Label Text="Client ID" />
+            <Entry x:Name="ClientIdEntry" />
+
+            <Label Text="Client secret" />
+            <Entry x:Name="ClientSecretEntry" IsPassword="True" />
+
+            <Label Text="Redirect URI" />
+            <Entry x:Name="RedirectUriEntry" />
+
+            <Label Text="Scope" />
+            <Entry x:Name="ScopeEntry" />
+
+            <BoxView HeightRequest="1" Color="LightGray" Margin="0,10" />
+
+            <Label Text="Actions" FontSize="18" FontAttributes="Bold" />
+
+            <Button Text="Start Authorization Request" Clicked="OnStartAuthorizationClicked" />
+            <Button Text="Exchange Code for Tokens" Clicked="OnExchangeTokenClicked" />
+            <Button Text="Refresh Access Token" Clicked="OnRefreshTokenClicked" />
+            <Button Text="Reset" Clicked="OnResetClicked" />
+
+            <Label Text="Operation" Margin="0,10,0,0" />
+            <HorizontalStackLayout Spacing="16">
+                <RadioButton x:Name="ReadOperation" Content="Read" GroupName="Operation" IsChecked="True" />
+                <RadioButton x:Name="WriteOperation" Content="Write" GroupName="Operation" />
+                <RadioButton x:Name="DeleteOperation" Content="Delete" GroupName="Operation" />
+            </HorizontalStackLayout>
+            <Button Text="Call Protected Resource" Clicked="OnCallResourceClicked" />
+
+            <BoxView HeightRequest="1" Color="LightGray" Margin="0,10" />
+
+            <Label Text="Session State" FontSize="18" FontAttributes="Bold" />
+
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <Label Grid.Row="0" Grid.Column="0" Text="State:" FontAttributes="Bold" />
+                <Label Grid.Row="0" Grid.Column="1" x:Name="StateLabel" Text="—" LineBreakMode="CharacterWrap" />
+
+                <Label Grid.Row="1" Grid.Column="0" Text="Code:" FontAttributes="Bold" />
+                <Label Grid.Row="1" Grid.Column="1" x:Name="CodeLabel" Text="—" LineBreakMode="CharacterWrap" />
+
+                <Label Grid.Row="2" Grid.Column="0" Text="Access token:" FontAttributes="Bold" />
+                <Label Grid.Row="2" Grid.Column="1" x:Name="AccessTokenLabel" Text="—" LineBreakMode="CharacterWrap" />
+
+                <Label Grid.Row="3" Grid.Column="0" Text="Token type:" FontAttributes="Bold" />
+                <Label Grid.Row="3" Grid.Column="1" x:Name="TokenTypeLabel" Text="—" />
+
+                <Label Grid.Row="4" Grid.Column="0" Text="Expires in:" FontAttributes="Bold" />
+                <Label Grid.Row="4" Grid.Column="1" x:Name="ExpiresInLabel" Text="—" />
+
+                <Label Grid.Row="5" Grid.Column="0" Text="Refresh token:" FontAttributes="Bold" />
+                <Label Grid.Row="5" Grid.Column="1" x:Name="RefreshTokenLabel" Text="—" LineBreakMode="CharacterWrap" />
+            </Grid>
+
+            <Label x:Name="ErrorLabel" TextColor="Red" IsVisible="False" />
+
+            <BoxView HeightRequest="1" Color="LightGray" Margin="0,10" />
+
+            <HorizontalStackLayout Spacing="12">
+                <Label Text="Request / Response Log" FontSize="18" FontAttributes="Bold" VerticalOptions="Center" />
+                <Button Text="Clear" Clicked="OnClearLogClicked" />
+            </HorizontalStackLayout>
+
+            <VerticalStackLayout x:Name="LogList" Spacing="10" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

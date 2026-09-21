@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="NativeClient.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>

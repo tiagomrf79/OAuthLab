@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NativeClient.MainPage"
+             Title="OAuthLab Native Client">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="16">
+            <Label
+                Text="OAuth2 Native Client"
+                FontSize="24"
+                FontAttributes="Bold" />
+            <Label
+                Text="Each grant type has its own screen below."
+                TextColor="Gray" />
+
+            <Button
+                Text="Authorization Code"
+                Clicked="OnAuthorizationCodeClicked"
+                HorizontalOptions="Fill" />
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

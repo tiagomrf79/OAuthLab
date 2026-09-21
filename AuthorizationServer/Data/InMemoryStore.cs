@@ -29,6 +29,19 @@ public class InMemoryStore
             RedirectUris = ["http://localhost:5173/"],
             AllowedScopes = ["read", "write", "delete"],
         },
+        new Client
+        {
+            // Static secret for now, same as ConfidentialClient — a real installed app can't
+            // keep this confidential (it ships inside the package), which is why this is slated
+            // to move to dynamic client registration and then PKCE. Redirect URI is a custom
+            // scheme the OS hands back to the app, not a web address — see
+            // NativeClient/Platforms/Android/WebAuthenticationCallbackActivity.cs.
+            ClientId = "native-client",
+            ClientSecret = "native-client-secret",
+            Name = "Native Client",
+            RedirectUris = ["nativeclient://callback"],
+            AllowedScopes = ["read", "write", "delete"],
+        },
     ];
 
     public List<OAuthUser> Users { get; } =
