@@ -52,7 +52,7 @@ public partial class AuthorizationCodePage : ContentPage
                 Scope = ScopeEntry.Text ?? "",
                 // Explicit rather than relying on the server's defaults — this page's "Refresh
                 // Access Token" button needs refresh_token too, not just authorization_code.
-                TokenEndpointAuthMethod = "secret_basic",
+                TokenEndpointAuthMethod = "client_secret_basic",
                 GrantTypes = ["authorization_code", "refresh_token"],
                 ResponseTypes = ["code"],
             }),

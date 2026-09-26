@@ -15,7 +15,7 @@ public class InMemoryStore
     // The only auth methods and grant/response types this server understands. Dynamic registration
     // rejects anything outside these; the seeded clients below are set to match what they actually
     // do today (confidential-client in particular uses grants beyond what RFC 7591 clients get).
-    public static readonly string[] KnownAuthMethods = ["secret_basic", "secret_post", "none"];
+    public static readonly string[] KnownAuthMethods = ["client_secret_basic", "client_secret_post", "none"];
     public static readonly string[] KnownGrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"];
     public static readonly string[] KnownResponseTypes = ["code", "token"];
     public static readonly string[] KnownAccessTokenFormats = ["jwt", "jwt-minimal", "reference"];
@@ -40,7 +40,7 @@ public class InMemoryStore
             // Always sends its secret via an Authorization: Basic header (see
             // ConfidentialClient/Controllers/HomeController.cs's BasicAuthHeader), and ConfidentialClient
             // is the only app in this lab that exercises client_credentials/password, so it needs all four.
-            TokenEndpointAuthMethod = "secret_basic",
+            TokenEndpointAuthMethod = "client_secret_basic",
             GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
             ResponseTypes = ["code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -59,7 +59,7 @@ public class InMemoryStore
             Name = "Confidential Client (reference tokens)",
             RedirectUris = ["http://localhost:5000/callback"],
             AllowedScopes = ["read", "write", "delete"],
-            TokenEndpointAuthMethod = "secret_basic",
+            TokenEndpointAuthMethod = "client_secret_basic",
             GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
             ResponseTypes = ["code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -75,7 +75,7 @@ public class InMemoryStore
             Name = "Confidential Client (minimal JWTs)",
             RedirectUris = ["http://localhost:5000/callback"],
             AllowedScopes = ["read", "write", "delete"],
-            TokenEndpointAuthMethod = "secret_basic",
+            TokenEndpointAuthMethod = "client_secret_basic",
             GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
             ResponseTypes = ["code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -149,6 +149,30 @@ public class InMemoryStore
 
     public OAuthUser? FindUser(string username, string password) =>
         Users.FirstOrDefault(u => u.Username == username && u.Password == password);
+
+    // Removes the refresh token and every access token issued under one grant — what revoking a
+    // refresh token means (RFC 7009 §2.1). Removing an entry while enumerating is safe on a
+    // ConcurrentDictionary.
+    public void RevokeGrant(string grantId)
+    {
+        foreach (var (token, refreshToken) in RefreshTokens)
+        {
+            if (refreshToken.GrantId == grantId)
+            {
+                RefreshTokens.TryRemove(token, out _);
+            }
+        }
+
+        foreach (var (token, accessToken) in AccessTokens)
+        {
+            if (accessToken.GrantId == grantId)
+            {
+                AccessTokens.TryRemove(token, out _);
+            }
+        }
+    }
+
+    public static string GenerateGrantId() => GenerateToken(16);
 
     public static string GenerateToken(int byteLength = 32) =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(byteLength)).ToLowerInvariant();

@@ -88,6 +88,51 @@ export async function callProtectedResource(store, resourceEndpoint, operation, 
   }
 }
 
+// RFC 7009 token revocation. This client has no secret, so — as at /token — it identifies itself
+// with client_id in the body. Returns a message for the page's notice area.
+export async function revokeToken(store, revocationEndpoint, clientId, token, tokenTypeHint) {
+  if (!token) {
+    return `No ${tokenTypeHint.replace('_', ' ')} to revoke.`
+  }
+
+  const body = new URLSearchParams({ token, token_type_hint: tokenTypeHint, client_id: clientId })
+  const request = {
+    method: 'POST',
+    url: revocationEndpoint,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  }
+
+  try {
+    const response = await fetch(revocationEndpoint, { method: 'POST', headers: request.headers, body })
+    const responseBody = await response.text()
+
+    store.appendLog({
+      title: 'Revoke access token',
+      request,
+      response: {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: formatJson(responseBody),
+      },
+    })
+
+    // The token is deliberately left in storage (a real client would drop it) so the next resource
+    // call shows what the revoked token still does.
+    return response.ok
+      ? 'Access token revoked. It\'s kept here on purpose — call the protected resource with it to see how it\'s treated now.'
+      : 'Revocation failed — see the log below.'
+  } catch (err) {
+    store.appendLog({
+      title: 'Revoke access token — network error',
+      request,
+      response: { body: `${err} (likely a CORS or connection issue — is AuthorizationServer running?)` },
+    })
+    return 'Revocation failed — see the log below.'
+  }
+}
+
 export function renderStatusItems(items) {
   return items.map(([label, value]) => `
     <div class="oauth-status-item">

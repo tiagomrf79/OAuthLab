@@ -48,7 +48,7 @@ public sealed class AccessTokenIssuer : IDisposable
         Audience = configuration["AccessToken:Audience"] ?? throw new InvalidOperationException("AccessToken:Audience is not configured.");
     }
 
-    public string Issue(Client client, string subject, string scope)
+    public string Issue(Client client, string subject, string scope, string grantId)
     {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(Lifetime);
@@ -67,6 +67,7 @@ public sealed class AccessTokenIssuer : IDisposable
             Subject = subject,
             Scope = scope,
             ExpiresAt = expiresAt,
+            GrantId = grantId,
         };
 
         return token;

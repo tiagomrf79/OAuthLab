@@ -284,6 +284,36 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         return RedirectToReturnPage(input.ReturnTo);
     }
 
+    [HttpPost("/revoke_access_token")]
+    public async Task<IActionResult> RevokeAccessToken(OAuthClientConfigInput input)
+    {
+        var cfg = BuildConfig(input);
+        SaveConfig(cfg);
+
+        if (await RevokeAsync(cfg, AccessTokenKey, "access_token", "Revoke access token"))
+        {
+            TempData["Error"] = "Access token revoked. It's kept in the session on purpose — call the protected " +
+                "resource with it to see which token formats notice (reference, minimal JWT) and which don't (full JWT).";
+        }
+
+        return RedirectToReturnPage(input.ReturnTo);
+    }
+
+    [HttpPost("/revoke_refresh_token")]
+    public async Task<IActionResult> RevokeRefreshToken(OAuthClientConfigInput input)
+    {
+        var cfg = BuildConfig(input);
+        SaveConfig(cfg);
+
+        if (await RevokeAsync(cfg, RefreshTokenKey, "refresh_token", "Revoke refresh token"))
+        {
+            TempData["Error"] = "Refresh token revoked, along with every access token issued from the same grant. " +
+                "Both are kept in the session on purpose — try refreshing, or calling the protected resource.";
+        }
+
+        return RedirectToReturnPage(input.ReturnTo);
+    }
+
     [HttpGet("/reset")]
     public IActionResult Reset(string? returnTo)
     {
@@ -418,6 +448,31 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         return false;
     }
 
+    // RFC 7009: authenticates exactly like a /token call. The token isn't dropped from the session
+    // afterwards (a real client would), so the page can show what the revoked token still does.
+    private async Task<bool> RevokeAsync(OAuthClientConfig cfg, string tokenKey, string tokenTypeHint, string title)
+    {
+        var token = HttpContext.Session.GetString(tokenKey);
+        if (string.IsNullOrEmpty(token))
+        {
+            TempData["Error"] = $"No {tokenTypeHint.Replace('_', ' ')} in session to revoke.";
+            return false;
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, cfg.RevocationEndpoint)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["token"] = token,
+                ["token_type_hint"] = tokenTypeHint,
+            }),
+        };
+        request.Headers.Authorization = BasicAuthHeader(cfg);
+
+        var (response, _) = await SendAndLogAsync(title, request);
+        return response.IsSuccessStatusCode;
+    }
+
     private static AuthenticationHeaderValue BasicAuthHeader(OAuthClientConfig cfg)
     {
         var credentials = $"{Uri.EscapeDataString(cfg.ClientId)}:{Uri.EscapeDataString(cfg.ClientSecret)}";
@@ -430,6 +485,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     {
         AuthorizeEndpoint = GetSetting(CfgAuthorizeEndpointKey, "AuthorizationServer:AuthorizeEndpoint"),
         TokenEndpoint = GetSetting(CfgTokenEndpointKey, "AuthorizationServer:TokenEndpoint"),
+        RevocationEndpoint = GetSetting(CfgRevocationEndpointKey, "AuthorizationServer:RevocationEndpoint"),
         ResourceEndpoint = GetSetting(CfgResourceEndpointKey, "ProtectedResource:ResourceEndpoint"),
         ClientId = GetSetting(CfgClientIdKey, "Client:ClientId"),
         ClientSecret = GetSetting(CfgClientSecretKey, "Client:ClientSecret"),
@@ -448,6 +504,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     {
         AuthorizeEndpoint = input.AuthorizeEndpoint ?? "",
         TokenEndpoint = input.TokenEndpoint ?? "",
+        RevocationEndpoint = input.RevocationEndpoint ?? "",
         ResourceEndpoint = input.ResourceEndpoint ?? "",
         ClientId = input.ClientId ?? "",
         ClientSecret = input.ClientSecret ?? "",
@@ -463,6 +520,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     {
         HttpContext.Session.SetString(CfgAuthorizeEndpointKey, cfg.AuthorizeEndpoint);
         HttpContext.Session.SetString(CfgTokenEndpointKey, cfg.TokenEndpoint);
+        HttpContext.Session.SetString(CfgRevocationEndpointKey, cfg.RevocationEndpoint);
         HttpContext.Session.SetString(CfgResourceEndpointKey, cfg.ResourceEndpoint);
         HttpContext.Session.SetString(CfgClientIdKey, cfg.ClientId);
         HttpContext.Session.SetString(CfgClientSecretKey, cfg.ClientSecret);

@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using AuthorizationServer;
 using AuthorizationServer.Data;
 using AuthorizationServer.Models;
@@ -19,9 +21,9 @@ builder.Services
         options.Cookie.Name = "AuthorizationServer.Auth";
     });
 
-// PublicClient's authorization code + PKCE page calls /token directly from browser JS, so the
-// browser enforces CORS there. Applied to /token only — /authorize and /approve are full-page
-// navigations, not fetches. Any origin is allowed since Vite's dev port can shift (same trade-off
+// PublicClient calls /token (authorization code + PKCE page) and /revoke (both pages) directly from
+// browser JS, so the browser enforces CORS there. Applied to those two only — /authorize and
+// /approve are full-page navigations, not fetches. Any origin is allowed since Vite's dev port can shift (same trade-off
 // as ProtectedResource) — this is a teaching sandbox, not production.
 const string TokenCorsPolicy = "TokenEndpoint";
 builder.Services.AddCors(options =>
@@ -132,6 +134,59 @@ app.MapPost("/introspect", async (HttpRequest request, InMemoryStore store, Acce
     });
 });
 
+// RFC 7009 token revocation — a client telling this server it's done with a token (logout,
+// uninstall, "disconnect this app"). Removing the record makes reference and minimal-JWT tokens
+// inactive at /introspect straight away; a full JWT is still accepted by ProtectedResource until it
+// expires, since nothing there asks this server about it — that gap is left visible on purpose.
+app.MapPost("/revoke", async (HttpRequest request, InMemoryStore store) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.Json(new { error = "invalid_request" }, statusCode: 400);
+    }
+
+    var form = await request.ReadFormAsync();
+
+    // §2.1: the same client authentication as /token — including "none" clients, which identify
+    // themselves by client_id alone.
+    if (!TryAuthenticateClient(request, form, store, out var client) || client is null)
+    {
+        return Results.Json(new { error = "invalid_client" }, statusCode: 401);
+    }
+
+    var token = form["token"].ToString();
+    if (string.IsNullOrEmpty(token))
+    {
+        return Results.Json(new { error = "invalid_request" }, statusCode: 400);
+    }
+
+    // token_type_hint is only an optimization (§2.1): the server must look in every token store
+    // anyway if the hint doesn't find it, and with two in-memory lookups there's nothing to save.
+    if (store.RefreshTokens.TryGetValue(token, out var refreshToken))
+    {
+        // A refresh token takes its whole grant with it — every access token minted from it too.
+        if (refreshToken.ClientId == client.ClientId)
+        {
+            store.RevokeGrant(refreshToken.GrantId);
+        }
+    }
+    else if (store.AccessTokens.TryGetValue(token, out var accessToken))
+    {
+        // An access token goes alone. §2.1 allows also revoking its refresh token, but that would
+        // punish a client for tidying up one token it no longer needs.
+        if (accessToken.ClientId == client.ClientId)
+        {
+            store.AccessTokens.TryRemove(token, out _);
+        }
+    }
+
+    // §2.2: 200 whether or not anything was removed — the token is unusable either way, which is
+    // all the client asked for. That includes a token belonging to a *different* client: §2.1 says
+    // to refuse that with an error, but an error would confirm to the caller that the token exists
+    // and whose it is, so it's silently ignored instead.
+    return Results.Ok();
+}).RequireCors(TokenCorsPolicy);
+
 // RFC 7591 dynamic client registration — lets a native client obtain its own client_id/secret at
 // runtime instead of shipping a static one baked into every install (see NativeClient's
 // AuthorizationCodePage, which calls this the first time it needs a token and has none yet).
@@ -169,7 +224,7 @@ app.MapPost("/register", async (HttpRequest request, InMemoryStore store) =>
     };
     store.Clients[client.ClientId] = client;
 
-    return Results.Json(BuildRegistrationResponse(client, request), statusCode: 201);
+    return RegistrationResponse(client, request, statusCode: 201);
 });
 
 // RFC 7592 client configuration management — lets a client read, replace, or delete its own
@@ -183,7 +238,7 @@ app.MapGet("/register/{clientId}", (string clientId, HttpRequest request, InMemo
         return Results.Json(new { error = "invalid_token" }, statusCode: 401);
     }
 
-    return Results.Json(BuildRegistrationResponse(client, request));
+    return RegistrationResponse(client, request);
 });
 
 app.MapPut("/register/{clientId}", async (string clientId, HttpRequest request, InMemoryStore store) =>
@@ -226,7 +281,7 @@ app.MapPut("/register/{clientId}", async (string clientId, HttpRequest request, 
     };
     store.Clients[clientId] = updated;
 
-    return Results.Json(BuildRegistrationResponse(updated, request));
+    return RegistrationResponse(updated, request);
 });
 
 app.MapDelete("/register/{clientId}", (string clientId, HttpRequest request, InMemoryStore store) =>
@@ -280,7 +335,7 @@ static bool TryAuthenticateClient(HttpRequest request, IFormCollection form, InM
     {
         clientId = headerClientId;
         providedSecret = headerClientSecret;
-        usedMethod = "secret_basic";
+        usedMethod = "client_secret_basic";
     }
     else if (!string.IsNullOrEmpty(bodyClientId))
     {
@@ -289,7 +344,7 @@ static bool TryAuthenticateClient(HttpRequest request, IFormCollection form, InM
         if (!string.IsNullOrEmpty(bodyClientSecret))
         {
             providedSecret = bodyClientSecret;
-            usedMethod = "secret_post";
+            usedMethod = "client_secret_post";
         }
         else
         {
@@ -387,7 +442,7 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
         return ("invalid_client_metadata", null);
     }
 
-    var authMethod = string.IsNullOrEmpty(body.TokenEndpointAuthMethod) ? "secret_basic" : body.TokenEndpointAuthMethod;
+    var authMethod = string.IsNullOrEmpty(body.TokenEndpointAuthMethod) ? "client_secret_basic" : body.TokenEndpointAuthMethod;
     if (!InMemoryStore.KnownAuthMethods.Contains(authMethod))
     {
         return ("invalid_client_metadata", null);
@@ -438,7 +493,15 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
         return ("invalid_client_metadata", null);
     }
 
-    if (body.RedirectUris is not { Length: > 0 })
+    // Only redirect-based flows (anything with a response_type) need somewhere to send the browser
+    // back to; a client registering without one (e.g. refresh_token only) doesn't have to supply one.
+    var redirectUris = body.RedirectUris ?? [];
+    if (responseTypes.Length > 0 && redirectUris.Length == 0)
+    {
+        return ("invalid_redirect_uri", null);
+    }
+
+    if (!redirectUris.All(IsAcceptableRedirectUri))
     {
         return ("invalid_redirect_uri", null);
     }
@@ -461,7 +524,7 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
 
     var metadata = new ClientMetadata(
         Name: string.IsNullOrWhiteSpace(body.ClientName) ? "Dynamically Registered Client" : body.ClientName,
-        RedirectUris: body.RedirectUris,
+        RedirectUris: redirectUris,
         AllowedScopes: scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
         TokenEndpointAuthMethod: authMethod,
         GrantTypes: grantTypes,
@@ -470,6 +533,39 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
         AccessTokenFormat: accessTokenFormat);
 
     return (null, metadata);
+}
+
+// RFC 6749 §3.1.2: a redirect URI MUST be absolute and MUST NOT carry a fragment. On top of that,
+// RFC 7591 §5 / RFC 8252 guidance on which schemes make sense for which clients:
+//   https              — any host.
+//   http               — loopback only (a native app's local listener, or local development);
+//                        anywhere else the code would cross the network in the clear.
+//   custom (myapp://)  — native apps' private-use schemes, e.g. NativeClient's nativeclient://.
+//   javascript:, data:, vbscript:, file: — never: they'd run or read something instead of navigating.
+static bool IsAcceptableRedirectUri(string value)
+{
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || !string.IsNullOrEmpty(uri.Fragment) || value.Contains('#'))
+    {
+        return false;
+    }
+
+    return uri.Scheme switch
+    {
+        "https" => true,
+        "http" => uri.IsLoopback,
+        "javascript" or "data" or "vbscript" or "file" => false,
+        _ => true,
+    };
+}
+
+// Registration responses carry secrets (client_secret, registration_access_token), so they must not
+// be cached — the same rule RFC 6749 §5.1 sets for /token, and what RFC 7591 §3.2.1's examples send.
+// Absent values (no client_secret for a "none" client) are left out rather than sent as null.
+static IResult RegistrationResponse(Client client, HttpRequest request, int statusCode = 200)
+{
+    request.HttpContext.Response.Headers.CacheControl = "no-store";
+    request.HttpContext.Response.Headers.Pragma = "no-cache";
+    return Results.Json(BuildRegistrationResponse(client, request), RegistrationJson.Options, statusCode: statusCode);
 }
 
 static object BuildRegistrationResponse(Client client, HttpRequest request) => new
@@ -525,7 +621,10 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = tokens.Issue(client, authCode.Subject, authCode.Scope);
+    // Redeeming the code starts a new grant; the refresh token carries its id so every access token
+    // minted from it later belongs to the same grant.
+    var grantId = InMemoryStore.GenerateGrantId();
+    var accessToken = tokens.Issue(client, authCode.Subject, authCode.Scope, grantId);
     // The refresh token stays opaque — only this server ever reads it, so there's nothing to gain
     // from making it self-contained, and a store lookup is what lets it be burned on misuse.
     var refreshToken = InMemoryStore.GenerateToken();
@@ -536,6 +635,7 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         ClientId = client.ClientId,
         Subject = authCode.Subject,
         Scope = authCode.Scope,
+        GrantId = grantId,
     };
 
     return Results.Json(new
@@ -553,7 +653,7 @@ static IResult HandleClientCredentialsGrant(IFormCollection form, Client client,
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
     // No end user in this grant — the client is acting on its own behalf, so it is its own subject.
-    var accessToken = tokens.Issue(client, client.ClientId, scope);
+    var accessToken = tokens.Issue(client, client.ClientId, scope, InMemoryStore.GenerateGrantId());
 
     // No refresh token per RFC 6749 §4.4.3 — the client can just request a new access token with
     // its credentials again, since it authenticates directly on every call.
@@ -579,7 +679,8 @@ static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemory
 
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
-    var accessToken = tokens.Issue(client, user.Subject, scope);
+    var grantId = InMemoryStore.GenerateGrantId();
+    var accessToken = tokens.Issue(client, user.Subject, scope, grantId);
     var refreshToken = InMemoryStore.GenerateToken();
 
     store.RefreshTokens[refreshToken] = new RefreshToken
@@ -588,6 +689,7 @@ static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemory
         ClientId = client.ClientId,
         Subject = user.Subject,
         Scope = scope,
+        GrantId = grantId,
     };
 
     return Results.Json(new
@@ -617,7 +719,8 @@ static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMe
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = tokens.Issue(client, refreshToken.Subject, refreshToken.Scope);
+    // Same grant as the refresh token, so revoking the refresh token takes this access token with it.
+    var accessToken = tokens.Issue(client, refreshToken.Subject, refreshToken.Scope, refreshToken.GrantId);
 
     return Results.Json(new
     {
@@ -641,3 +744,11 @@ internal record ClientMetadata(
     string[] ResponseTypes,
     bool RequirePkce,
     string AccessTokenFormat);
+
+internal static class RegistrationJson
+{
+    public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+}

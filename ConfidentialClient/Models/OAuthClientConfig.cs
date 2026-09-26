@@ -7,6 +7,7 @@ public record OAuthClientConfig
 {
     public required string AuthorizeEndpoint { get; init; }
     public required string TokenEndpoint { get; init; }
+    public required string RevocationEndpoint { get; init; }
     public required string ResourceEndpoint { get; init; }
     public required string ClientId { get; init; }
     public required string ClientSecret { get; init; }

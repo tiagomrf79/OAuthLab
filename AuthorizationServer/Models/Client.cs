@@ -8,7 +8,7 @@ public class Client
     public required string[] RedirectUris { get; init; }
     public required string[] AllowedScopes { get; init; }
 
-    // How this client authenticates at /token: "secret_basic", "secret_post", or "none".
+    // How this client authenticates at /token: "client_secret_basic", "client_secret_post", or "none".
     // Enforced in Program.cs's TryAuthenticateClient — a client must use the exact method it
     // registered with, not just any credentials that happen to match.
     public required string TokenEndpointAuthMethod { get; init; }

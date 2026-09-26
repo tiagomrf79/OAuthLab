@@ -23,6 +23,7 @@ internal static class SessionKeys
     {
         public const string CfgAuthorizeEndpointKey = "cfg.authorize_endpoint";
         public const string CfgTokenEndpointKey = "cfg.token_endpoint";
+        public const string CfgRevocationEndpointKey = "cfg.revocation_endpoint";
         public const string CfgResourceEndpointKey = "cfg.resource_endpoint";
         public const string CfgClientIdKey = "cfg.client_id";
         public const string CfgClientSecretKey = "cfg.client_secret";

@@ -1,3 +1,0 @@
-There’s a standardized web protocol called Token Introspection that the authorization server can offer, allowing the resource server to check the token’s state at runtime. This lets the resource server treat the token itself as opaque, just like the client does, at the expense of more network traffic.
-
-Alternatively, or even additionally, the tokens themselves can contain information that the protected resource can parse and understand directly. One such structure is a JSON Web Token, or JWT, which carries a set of claims in a cryptographically protected JSON object. 

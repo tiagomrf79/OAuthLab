@@ -51,7 +51,7 @@ public class ApproveModel(InMemoryStore store, AccessTokenIssuer tokens) : PageM
         {
             // No refresh token here — RFC 6749 §4.2.2 doesn't define one for the implicit grant,
             // and there'd be no way to redeem it later without a client secret to authenticate with.
-            var accessToken = tokens.Issue(client, subject, grantedScope);
+            var accessToken = tokens.Issue(client, subject, grantedScope, InMemoryStore.GenerateGrantId());
 
             return Redirect(BuildRedirectUrl(new()
             {

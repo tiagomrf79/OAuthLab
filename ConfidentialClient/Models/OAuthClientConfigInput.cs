@@ -6,6 +6,7 @@ public class OAuthClientConfigInput
 {
     public string? AuthorizeEndpoint { get; set; }
     public string? TokenEndpoint { get; set; }
+    public string? RevocationEndpoint { get; set; }
     public string? ResourceEndpoint { get; set; }
     public string? ClientId { get; set; }
     public string? ClientSecret { get; set; }

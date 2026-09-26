@@ -8,23 +8,26 @@ import {
   renderLogPanel,
   renderOperationGroup,
   renderStatusItems,
+  revokeToken,
 } from './shared.js'
 
 const store = createStore('implicit')
 
 const DEFAULT_CONFIG = {
   authorizeEndpoint: import.meta.env.VITE_AUTHORIZE_ENDPOINT ?? 'http://localhost:5001/authorize',
+  revocationEndpoint: import.meta.env.VITE_REVOCATION_ENDPOINT ?? 'http://localhost:5001/revoke',
   resourceEndpoint: import.meta.env.VITE_RESOURCE_ENDPOINT ?? 'http://localhost:5002/resource',
   clientId: import.meta.env.VITE_CLIENT_ID ?? 'public-client',
   scope: import.meta.env.VITE_SCOPE ?? 'read',
   operation: 'read',
 }
 
-const CONFIG_FIELDS = ['authorizeEndpoint', 'resourceEndpoint', 'clientId', 'redirectUri', 'scope', 'operation']
+const CONFIG_FIELDS = ['authorizeEndpoint', 'revocationEndpoint', 'resourceEndpoint', 'clientId', 'redirectUri', 'scope', 'operation']
 
 function getConfig() {
   return {
     authorizeEndpoint: store.get('authorizeEndpoint') ?? DEFAULT_CONFIG.authorizeEndpoint,
+    revocationEndpoint: store.get('revocationEndpoint') ?? DEFAULT_CONFIG.revocationEndpoint,
     resourceEndpoint: store.get('resourceEndpoint') ?? DEFAULT_CONFIG.resourceEndpoint,
     clientId: store.get('clientId') ?? DEFAULT_CONFIG.clientId,
     redirectUri: store.get('redirectUri') ?? defaultRedirectUri(),
@@ -41,6 +44,7 @@ function readFormConfig(form) {
   const data = new FormData(form)
   return {
     authorizeEndpoint: data.get('authorizeEndpoint')?.trim() || '',
+    revocationEndpoint: data.get('revocationEndpoint')?.trim() || '',
     resourceEndpoint: data.get('resourceEndpoint')?.trim() || '',
     clientId: data.get('clientId')?.trim() || '',
     redirectUri: data.get('redirectUri')?.trim() || '',
@@ -161,6 +165,10 @@ function render(error) {
               Authorize endpoint
               <input type="text" name="authorizeEndpoint" value="${escapeHtml(cfg.authorizeEndpoint)}" />
             </label>
+            <label>
+              Revocation endpoint
+              <input type="text" name="revocationEndpoint" value="${escapeHtml(cfg.revocationEndpoint)}" />
+            </label>
           </div>
 
           <div class="oauth-field-group">
@@ -194,6 +202,10 @@ function render(error) {
             <button type="button" id="start-authorization-btn" class="oauth-action-btn">
               <span class="oauth-action-title">Start Authorization Request</span>
               <span class="oauth-action-desc">Redirect to the authorize endpoint (response_type=token)</span>
+            </button>
+            <button type="button" id="revoke-token-btn" class="oauth-action-btn">
+              <span class="oauth-action-title">Revoke Access Token</span>
+              <span class="oauth-action-desc">POST the access token to the revocation endpoint</span>
             </button>
             <button type="button" id="reset-btn" class="oauth-action-btn secondary">
               <span class="oauth-action-title">Reset Session</span>
@@ -231,6 +243,12 @@ function render(error) {
 
   document.querySelector('#start-authorization-btn').addEventListener('click', () => {
     startAuthorizationRequest(form)
+  })
+
+  document.querySelector('#revoke-token-btn').addEventListener('click', async () => {
+    const cfg = readFormConfig(form)
+    saveConfig(cfg)
+    render(await revokeToken(store, cfg.revocationEndpoint, cfg.clientId, store.get('accessToken'), 'access_token'))
   })
 
   document.querySelector('#call-resource-btn').addEventListener('click', async () => {
