@@ -45,18 +45,19 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
 
     var form = await request.ReadFormAsync();
 
-    if (!TryGetClientCredentials(request, form, out var clientId, out var clientSecret))
+    if (!TryAuthenticateClient(request, form, store, out var client) || client is null)
     {
         return Results.Json(new { error = "invalid_client" }, statusCode: 401);
     }
 
-    var client = store.FindClient(clientId);
-    if (client is null || client.ClientSecret != clientSecret)
+    var grantType = form["grant_type"].ToString();
+    if (!client.GrantTypes.Contains(grantType))
     {
-        return Results.Json(new { error = "invalid_client" }, statusCode: 401);
+        // RFC 6749 §5.2 — the grant type is a real one, just not one this client registered for.
+        return Results.Json(new { error = "unauthorized_client" }, statusCode: 400);
     }
 
-    return form["grant_type"].ToString() switch
+    return grantType switch
     {
         "authorization_code" => HandleAuthorizationCodeGrant(form, client, store),
         "refresh_token" => HandleRefreshTokenGrant(form, client, store),
@@ -66,14 +67,122 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
     };
 });
 
+// RFC 7591 dynamic client registration — lets a native client obtain its own client_id/secret at
+// runtime instead of shipping a static one baked into every install (see NativeClient's
+// AuthorizationCodePage, which calls this the first time it needs a token and has none yet).
+app.MapPost("/register", async (HttpRequest request, InMemoryStore store) =>
+{
+    if (!request.HasJsonContentType())
+    {
+        return Results.Json(new { error = "invalid_client_metadata" }, statusCode: 400);
+    }
+
+    var (error, metadata) = ValidateClientMetadata(await request.ReadFromJsonAsync<ClientRegistrationRequest>());
+    if (error is not null || metadata is null)
+    {
+        return Results.Json(new { error }, statusCode: 400);
+    }
+
+    var client = new Client
+    {
+        ClientId = InMemoryStore.GenerateToken(16),
+        // A "none" client authenticates with no secret at all, so there's nothing to protect by
+        // minting one — it would just be a value the client never sends and never needs.
+        ClientSecret = metadata.TokenEndpointAuthMethod == "none" ? "" : InMemoryStore.GenerateToken(32),
+        // Separate from ClientSecret — this is what authorizes the RFC 7592 management calls below,
+        // not requests to /token.
+        RegistrationAccessToken = InMemoryStore.GenerateToken(24),
+        ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        Name = metadata.Name,
+        RedirectUris = metadata.RedirectUris,
+        AllowedScopes = metadata.AllowedScopes,
+        TokenEndpointAuthMethod = metadata.TokenEndpointAuthMethod,
+        GrantTypes = metadata.GrantTypes,
+        ResponseTypes = metadata.ResponseTypes,
+    };
+    store.Clients[client.ClientId] = client;
+
+    return Results.Json(BuildRegistrationResponse(client, request), statusCode: 201);
+});
+
+// RFC 7592 client configuration management — lets a client read, replace, or delete its own
+// registration using the registration_access_token it got back from POST /register. This is
+// deliberately separate from admin/general client lookup: the bearer token below is the only
+// thing that authorizes these calls, and it's scoped to exactly one client_id.
+app.MapGet("/register/{clientId}", (string clientId, HttpRequest request, InMemoryStore store) =>
+{
+    if (!TryAuthorizeClientManagement(request, store, clientId, out var client) || client is null)
+    {
+        return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
+
+    return Results.Json(BuildRegistrationResponse(client, request));
+});
+
+app.MapPut("/register/{clientId}", async (string clientId, HttpRequest request, InMemoryStore store) =>
+{
+    if (!TryAuthorizeClientManagement(request, store, clientId, out var existing) || existing is null)
+    {
+        return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
+
+    if (!request.HasJsonContentType())
+    {
+        return Results.Json(new { error = "invalid_client_metadata" }, statusCode: 400);
+    }
+
+    var (error, metadata) = ValidateClientMetadata(await request.ReadFromJsonAsync<ClientRegistrationRequest>());
+    if (error is not null || metadata is null)
+    {
+        return Results.Json(new { error }, statusCode: 400);
+    }
+
+    // PUT is a full replace per RFC 7592 §2.2, not a merge — fields left out of the body (e.g. no
+    // grant_types) fall back to ValidateClientMetadata's defaults rather than keeping the old ones.
+    var authMethodChangedToNone = metadata.TokenEndpointAuthMethod == "none" && existing.TokenEndpointAuthMethod != "none";
+    var authMethodChangedFromNone = metadata.TokenEndpointAuthMethod != "none" && existing.TokenEndpointAuthMethod == "none";
+
+    var updated = new Client
+    {
+        ClientId = existing.ClientId,
+        ClientSecret = authMethodChangedToNone ? "" : authMethodChangedFromNone ? InMemoryStore.GenerateToken(32) : existing.ClientSecret,
+        RegistrationAccessToken = existing.RegistrationAccessToken,
+        ClientIdIssuedAt = existing.ClientIdIssuedAt,
+        Name = metadata.Name,
+        RedirectUris = metadata.RedirectUris,
+        AllowedScopes = metadata.AllowedScopes,
+        TokenEndpointAuthMethod = metadata.TokenEndpointAuthMethod,
+        GrantTypes = metadata.GrantTypes,
+        ResponseTypes = metadata.ResponseTypes,
+    };
+    store.Clients[clientId] = updated;
+
+    return Results.Json(BuildRegistrationResponse(updated, request));
+});
+
+app.MapDelete("/register/{clientId}", (string clientId, HttpRequest request, InMemoryStore store) =>
+{
+    if (!TryAuthorizeClientManagement(request, store, clientId, out _))
+    {
+        return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
+
+    store.Clients.TryRemove(clientId, out _);
+    return Results.NoContent();
+});
+
 app.Run();
 
-static bool TryGetClientCredentials(HttpRequest request, IFormCollection form, out string clientId, out string clientSecret)
+// Identifies which client is calling and how (Basic header vs. POST body vs. no secret at all),
+// then checks both that the secret is correct AND that the method used matches what the client
+// registered with — a client can't just switch to whichever method happens to work.
+static bool TryAuthenticateClient(HttpRequest request, IFormCollection form, InMemoryStore store, out Client? client)
 {
-    clientId = "";
-    clientSecret = "";
+    client = null;
 
     var hasHeaderCredentials = false;
+    var headerClientId = "";
+    var headerClientSecret = "";
     var header = request.Headers.Authorization.ToString();
     if (header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
     {
@@ -86,8 +195,8 @@ static bool TryGetClientCredentials(HttpRequest request, IFormCollection form, o
                 return false;
             }
 
-            clientId = Uri.UnescapeDataString(decoded[..separatorIndex]);
-            clientSecret = Uri.UnescapeDataString(decoded[(separatorIndex + 1)..]);
+            headerClientId = Uri.UnescapeDataString(decoded[..separatorIndex]);
+            headerClientSecret = Uri.UnescapeDataString(decoded[(separatorIndex + 1)..]);
             hasHeaderCredentials = true;
         }
         catch (FormatException)
@@ -97,24 +206,185 @@ static bool TryGetClientCredentials(HttpRequest request, IFormCollection form, o
     }
 
     var bodyClientId = form["client_id"].ToString();
-    if (!string.IsNullOrEmpty(bodyClientId))
+    if (hasHeaderCredentials && !string.IsNullOrEmpty(bodyClientId))
     {
-        if (hasHeaderCredentials)
-        {
-            // The client authenticated with both the Authorization header and body fields at once —
-            // reject rather than silently pick one, per RFC 6749 §2.3.1 ("the client MUST NOT use
-            // more than one authentication method in each request").
-            clientId = "";
-            clientSecret = "";
-            return false;
-        }
-
-        clientId = bodyClientId;
-        clientSecret = form["client_secret"].ToString();
+        // The client authenticated with both the Authorization header and body fields at once —
+        // reject rather than silently pick one, per RFC 6749 §2.3.1 ("the client MUST NOT use
+        // more than one authentication method in each request").
+        return false;
     }
 
-    return !string.IsNullOrEmpty(clientId);
+    string clientId;
+    string? providedSecret;
+    string usedMethod;
+
+    if (hasHeaderCredentials)
+    {
+        clientId = headerClientId;
+        providedSecret = headerClientSecret;
+        usedMethod = "secret_basic";
+    }
+    else if (!string.IsNullOrEmpty(bodyClientId))
+    {
+        clientId = bodyClientId;
+        var bodyClientSecret = form["client_secret"].ToString();
+        if (!string.IsNullOrEmpty(bodyClientSecret))
+        {
+            providedSecret = bodyClientSecret;
+            usedMethod = "secret_post";
+        }
+        else
+        {
+            providedSecret = null;
+            usedMethod = "none";
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    var foundClient = store.FindClient(clientId);
+    if (foundClient is null || foundClient.TokenEndpointAuthMethod != usedMethod)
+    {
+        return false;
+    }
+
+    if (usedMethod != "none" && foundClient.ClientSecret != providedSecret)
+    {
+        return false;
+    }
+
+    client = foundClient;
+    return true;
 }
+
+// A registration access token, presented as "Authorization: Bearer <token>", is a separate secret
+// from the client's OAuth client_secret — it only ever authorizes calls to this client's own
+// /register/{client_id} endpoint. A client with no RegistrationAccessToken (the statically-seeded
+// ones) can never present a matching token, so this always fails closed for them.
+static bool TryAuthorizeClientManagement(HttpRequest request, InMemoryStore store, string clientId, out Client? client)
+{
+    client = null;
+
+    var header = request.Headers.Authorization.ToString();
+    if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var token = header["Bearer ".Length..].Trim();
+    if (string.IsNullOrEmpty(token))
+    {
+        return false;
+    }
+
+    var found = store.FindClient(clientId);
+    if (found?.RegistrationAccessToken is null || found.RegistrationAccessToken != token)
+    {
+        return false;
+    }
+
+    client = found;
+    return true;
+}
+
+// Shared by POST /register and PUT /register/{client_id} — validates and defaults/cross-derives
+// client metadata the same way both times, so a client's registration can't drift depending on
+// which of those two calls produced it.
+static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRegistrationRequest? body)
+{
+    if (body is null)
+    {
+        return ("invalid_client_metadata", null);
+    }
+
+    var authMethod = string.IsNullOrEmpty(body.TokenEndpointAuthMethod) ? "secret_basic" : body.TokenEndpointAuthMethod;
+    if (!InMemoryStore.KnownAuthMethods.Contains(authMethod))
+    {
+        return ("invalid_client_metadata", null);
+    }
+
+    // Mirrors the reference "OAuth 2 in Action" registration endpoint: default and cross-derive
+    // grant_types/response_types from whichever one was actually supplied, so a caller that only
+    // says "I want response_type=code" doesn't also have to spell out grant_type=authorization_code.
+    string[] grantTypes;
+    string[] responseTypes;
+    if (body.GrantTypes is not { Length: > 0 })
+    {
+        if (body.ResponseTypes is not { Length: > 0 })
+        {
+            grantTypes = ["authorization_code"];
+            responseTypes = ["code"];
+        }
+        else
+        {
+            responseTypes = body.ResponseTypes;
+            grantTypes = responseTypes.Contains("code") ? ["authorization_code"] : [];
+        }
+    }
+    else if (body.ResponseTypes is not { Length: > 0 })
+    {
+        grantTypes = body.GrantTypes;
+        responseTypes = grantTypes.Contains("authorization_code") ? ["code"] : [];
+    }
+    else
+    {
+        grantTypes = body.GrantTypes;
+        responseTypes = body.ResponseTypes;
+        if (grantTypes.Contains("authorization_code") && !responseTypes.Contains("code"))
+        {
+            responseTypes = [.. responseTypes, "code"];
+        }
+        if (!grantTypes.Contains("authorization_code") && responseTypes.Contains("code"))
+        {
+            grantTypes = [.. grantTypes, "authorization_code"];
+        }
+    }
+
+    // Dynamic registration is restricted to authorization_code (+ refresh_token) / code — the
+    // client_credentials, password and implicit grants stay reserved for the statically-seeded
+    // clients that this lab already trusts by configuration.
+    if (grantTypes.Except(InMemoryStore.RegistrableGrantTypes).Any() || responseTypes.Except(InMemoryStore.RegistrableResponseTypes).Any())
+    {
+        return ("invalid_client_metadata", null);
+    }
+
+    if (body.RedirectUris is not { Length: > 0 })
+    {
+        return ("invalid_redirect_uri", null);
+    }
+
+    var scope = string.Join(' ', (body.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(InMemoryStore.KnownScopes));
+
+    var metadata = new ClientMetadata(
+        Name: string.IsNullOrWhiteSpace(body.ClientName) ? "Dynamically Registered Client" : body.ClientName,
+        RedirectUris: body.RedirectUris,
+        AllowedScopes: scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+        TokenEndpointAuthMethod: authMethod,
+        GrantTypes: grantTypes,
+        ResponseTypes: responseTypes);
+
+    return (null, metadata);
+}
+
+static object BuildRegistrationResponse(Client client, HttpRequest request) => new
+{
+    client_id = client.ClientId,
+    client_secret = client.TokenEndpointAuthMethod == "none" ? null : client.ClientSecret,
+    client_id_issued_at = client.ClientIdIssuedAt,
+    client_secret_expires_at = 0,
+    client_name = client.Name,
+    redirect_uris = client.RedirectUris,
+    token_endpoint_auth_method = client.TokenEndpointAuthMethod,
+    grant_types = client.GrantTypes,
+    response_types = client.ResponseTypes,
+    scope = string.Join(' ', client.AllowedScopes),
+    registration_access_token = client.RegistrationAccessToken,
+    registration_client_uri = client.RegistrationAccessToken is null
+        ? null
+        : $"{request.Scheme}://{request.Host}/register/{client.ClientId}",
+};
 
 static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client, InMemoryStore store)
 {
@@ -269,3 +539,14 @@ static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMe
         scope = refreshToken.Scope,
     });
 }
+
+// The subset of Client fields a registration request actually supplies — deliberately missing
+// ClientId/ClientSecret/RegistrationAccessToken/ClientIdIssuedAt, which only POST /register and
+// PUT /register/{client_id} know how to assign (a fresh id and secret, or an existing one to keep).
+internal record ClientMetadata(
+    string Name,
+    string[] RedirectUris,
+    string[] AllowedScopes,
+    string TokenEndpointAuthMethod,
+    string[] GrantTypes,
+    string[] ResponseTypes);

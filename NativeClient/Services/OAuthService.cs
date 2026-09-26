@@ -40,6 +40,18 @@ public class OAuthService
         }
     }
 
+    public static ClientRegistrationResponse? DeserializeRegistration(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<ClientRegistrationResponse>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public static AuthenticationHeaderValue BasicAuthHeader(string clientId, string clientSecret)
     {
         var credentials = $"{Uri.EscapeDataString(clientId)}:{Uri.EscapeDataString(clientSecret)}";

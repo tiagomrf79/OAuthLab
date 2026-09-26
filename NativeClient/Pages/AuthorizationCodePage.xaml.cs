@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Microsoft.Maui.Authentication;
 using NativeClient.Models;
@@ -23,20 +24,70 @@ public partial class AuthorizationCodePage : ContentPage
 
     // Defaults target the Android emulator's loopback alias (10.0.2.2 = the host machine's
     // localhost) — a physical device on the same network would need the host's LAN IP instead.
+    // Client ID/secret are left blank — this client has no static credentials baked in; it
+    // registers itself dynamically (RFC 7591) the first time it starts an authorization request.
     private void LoadDefaults()
     {
+        RegisterEndpointEntry.Text = "http://10.0.2.2:5001/register";
         AuthorizeEndpointEntry.Text = "http://10.0.2.2:5001/authorize";
         TokenEndpointEntry.Text = "http://10.0.2.2:5001/token";
         ResourceEndpointEntry.Text = "http://10.0.2.2:5002";
-        ClientIdEntry.Text = "native-client";
-        ClientSecretEntry.Text = "native-client-secret";
+        ClientIdEntry.Text = "";
+        ClientSecretEntry.Text = "";
         RedirectUriEntry.Text = "nativeclient://callback";
         ScopeEntry.Text = "read write delete";
+    }
+
+    // RFC 7591 dynamic client registration: a real install would do this once on first launch and
+    // persist the result; here it happens lazily, the first time a token is needed and no
+    // client_id is on hand yet, which keeps the demo to a single "Start Authorization Request" tap.
+    private async Task<bool> RegisterClientAsync()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, RegisterEndpointEntry.Text)
+        {
+            Content = JsonContent.Create(new ClientRegistrationRequest
+            {
+                RedirectUris = [RedirectUriEntry.Text ?? ""],
+                ClientName = "Native Client",
+                Scope = ScopeEntry.Text ?? "",
+                // Explicit rather than relying on the server's defaults — this page's "Refresh
+                // Access Token" button needs refresh_token too, not just authorization_code.
+                TokenEndpointAuthMethod = "secret_basic",
+                GrantTypes = ["authorization_code", "refresh_token"],
+                ResponseTypes = ["code"],
+            }),
+        };
+
+        var (response, body, log) = await _oauth.SendAndLogAsync("Register client (dynamic client registration)", request);
+        AppendLog(log);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            SetError("Dynamic client registration failed — see the log below.");
+            return false;
+        }
+
+        var registration = OAuthService.DeserializeRegistration(body);
+        if (registration?.ClientId is null)
+        {
+            SetError("Dynamic client registration succeeded but returned no client_id.");
+            return false;
+        }
+
+        ClientIdEntry.Text = registration.ClientId;
+        ClientSecretEntry.Text = registration.ClientSecret ?? "";
+        return true;
     }
 
     private async void OnStartAuthorizationClicked(object? sender, EventArgs e)
     {
         SetError(null);
+
+        if (string.IsNullOrEmpty(ClientIdEntry.Text) && !await RegisterClientAsync())
+        {
+            return;
+        }
+
         _state = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         StateLabel.Text = _state;
         _code = null;

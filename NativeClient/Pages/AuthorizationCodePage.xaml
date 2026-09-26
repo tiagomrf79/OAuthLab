@@ -9,6 +9,9 @@
 
             <Label Text="Configuration" FontSize="18" FontAttributes="Bold" />
 
+            <Label Text="Register endpoint" />
+            <Entry x:Name="RegisterEndpointEntry" />
+
             <Label Text="Authorize endpoint" />
             <Entry x:Name="AuthorizeEndpointEntry" />
 
@@ -18,11 +21,11 @@
             <Label Text="Resource endpoint" />
             <Entry x:Name="ResourceEndpointEntry" />
 
-            <Label Text="Client ID" />
-            <Entry x:Name="ClientIdEntry" />
+            <Label Text="Client ID (blank until registered)" />
+            <Entry x:Name="ClientIdEntry" IsReadOnly="True" Placeholder="registered automatically" />
 
-            <Label Text="Client secret" />
-            <Entry x:Name="ClientSecretEntry" IsPassword="True" />
+            <Label Text="Client secret (blank until registered)" />
+            <Entry x:Name="ClientSecretEntry" IsPassword="True" IsReadOnly="True" Placeholder="registered automatically" />
 
             <Label Text="Redirect URI" />
             <Entry x:Name="RedirectUriEntry" />

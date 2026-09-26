@@ -31,6 +31,11 @@ public class AuthorizeModel(InMemoryStore store) : PageModel
             return BadRequest("Invalid redirect URI.");
         }
 
+        if (!client.ResponseTypes.Contains(response_type))
+        {
+            return Redirect(OAuthRedirect.Build(redirect_uri, new() { ["error"] = "unauthorized_client" }, state));
+        }
+
         var allowedScopes = (scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes).ToArray();
         if (allowedScopes.Length == 0)
         {
