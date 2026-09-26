@@ -22,4 +22,9 @@ public class ClientRegistrationRequest
 
     [JsonPropertyName("response_types")]
     public string[]? ResponseTypes { get; set; }
+
+    // Not part of RFC 7591 — a lab-specific extension. Defaults to true for "none" clients (which
+    // can't opt out) and false otherwise.
+    [JsonPropertyName("require_pkce")]
+    public bool? RequirePkce { get; set; }
 }

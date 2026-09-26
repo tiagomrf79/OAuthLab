@@ -15,6 +15,10 @@
                 <span class="oauth-action-title">Authorization Code</span>
                 <span class="oauth-action-desc">User signs in at the AS; the client exchanges a code for tokens</span>
             </a>
+            <a asp-action="AuthorizationCodePkce" class="oauth-action-btn">
+                <span class="oauth-action-title">Authorization Code + PKCE</span>
+                <span class="oauth-action-desc">Same flow, with a code verifier binding the code to this client's request on top of its secret</span>
+            </a>
             <a asp-action="ClientCredentials" class="oauth-action-btn">
                 <span class="oauth-action-title">Client Credentials</span>
                 <span class="oauth-action-desc">The client authenticates directly with its own credentials — no user involved</span>

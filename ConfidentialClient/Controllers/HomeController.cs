@@ -25,12 +25,22 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         return View(BuildViewModel());
     }
 
+    [HttpGet("/authorization-code-pkce")]
+    public IActionResult AuthorizationCodePkce()
+    {
+        return View(BuildViewModel());
+    }
+
+    // Shared by both code flow pages — the PKCE page is told apart by its returnTo hidden field.
     [HttpPost("/authorize")]
     public IActionResult Authorize(OAuthClientConfigInput input)
     {
         var cfg = BuildConfig(input);
         SaveConfig(cfg);
         ClearOAuthSession();
+
+        var usePkce = input.ReturnTo == nameof(AuthorizationCodePkce);
+        HttpContext.Session.SetString(FlowKey, usePkce ? nameof(AuthorizationCodePkce) : nameof(AuthorizationCode));
 
         var state = GenerateState();
         HttpContext.Session.SetString(StateKey, state);
@@ -43,6 +53,20 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             ["scope"] = cfg.Scope,
             ["state"] = state,
         };
+
+        if (usePkce)
+        {
+            // PKCE on top of the client secret (RFC 7636, recommended for confidential clients by
+            // RFC 9700 §2.1.1): the verifier stays server-side in session and is only sent on the
+            // back-channel /token call; the front channel only ever sees its S256 hash.
+            var codeVerifier = GenerateCodeVerifier();
+            var codeChallenge = ComputeS256Challenge(codeVerifier);
+            HttpContext.Session.SetString(CodeVerifierKey, codeVerifier);
+            HttpContext.Session.SetString(CodeChallengeKey, codeChallenge);
+            query["code_challenge"] = codeChallenge;
+            query["code_challenge_method"] = "S256";
+        }
+
         var url = QueryHelpers.AddQueryString(cfg.AuthorizeEndpoint, query);
 
         AppendLog(new LogEntry
@@ -57,6 +81,8 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     [HttpGet("/callback")]
     public IActionResult Callback(string? code, string? state, string? error, string? error_description)
     {
+        var returnPage = RedirectToReturnPage(HttpContext.Session.GetString(FlowKey));
+
         if (error is not null)
         {
             AppendLog(new LogEntry
@@ -69,7 +95,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
                     Body = $"error: {error}\ndescription: {error_description ?? "(none)"}",
                 },
             });
-            return RedirectToAction(nameof(AuthorizationCode));
+            return returnPage;
         }
 
         var expectedState = HttpContext.Session.GetString(StateKey);
@@ -85,7 +111,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
                     Body = $"expected state: {expectedState}\nreceived state: {state}",
                 },
             });
-            return RedirectToAction(nameof(AuthorizationCode));
+            return returnPage;
         }
 
         HttpContext.Session.SetString(CodeKey, code ?? "");
@@ -100,7 +126,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             },
         });
 
-        return RedirectToAction(nameof(AuthorizationCode));
+        return returnPage;
     }
 
     [HttpPost("/exchange_token")]
@@ -113,17 +139,27 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         if (string.IsNullOrEmpty(code))
         {
             TempData["Error"] = "No authorization code in session — run \"Start Authorization Request\" first.";
-            return RedirectToAction(nameof(AuthorizationCode));
+            return RedirectToReturnPage(input.ReturnTo);
+        }
+
+        var form = new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["redirect_uri"] = cfg.RedirectUri,
+        };
+
+        // Only present when the code was requested with a code_challenge — the AS rejects a
+        // verifier sent for a code that had none, so the plain flow must not send one.
+        var codeVerifier = HttpContext.Session.GetString(CodeVerifierKey);
+        if (!string.IsNullOrEmpty(codeVerifier))
+        {
+            form["code_verifier"] = codeVerifier;
         }
 
         var request = new HttpRequestMessage(HttpMethod.Post, cfg.TokenEndpoint)
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "authorization_code",
-                ["code"] = code,
-                ["redirect_uri"] = cfg.RedirectUri,
-            }),
+            Content = new FormUrlEncodedContent(form),
         };
         request.Headers.Authorization = BasicAuthHeader(cfg);
 
@@ -133,7 +169,7 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
             StoreTokens(Deserialize(body));
         }
 
-        return RedirectToAction(nameof(AuthorizationCode));
+        return RedirectToReturnPage(input.ReturnTo);
     }
 
     [HttpPost("/refresh_token")]
@@ -309,13 +345,16 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     {
         nameof(ClientCredentials) => RedirectToAction(nameof(ClientCredentials)),
         nameof(Password) => RedirectToAction(nameof(Password)),
+        nameof(AuthorizationCodePkce) => RedirectToAction(nameof(AuthorizationCodePkce)),
         _ => RedirectToAction(nameof(AuthorizationCode)),
     };
 
     private void ClearOAuthSession()
     {
-        HttpContext.Session.Remove(StateKey);
-        HttpContext.Session.Remove(CodeKey);
+        foreach (var key in new[] { StateKey, CodeKey, CodeVerifierKey, CodeChallengeKey, FlowKey })
+        {
+            HttpContext.Session.Remove(key);
+        }
         ClearTokens();
     }
 
@@ -460,6 +499,8 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
         Config = GetEffectiveConfig(),
         State = HttpContext.Session.GetString(StateKey),
         Code = HttpContext.Session.GetString(CodeKey),
+        CodeVerifier = HttpContext.Session.GetString(CodeVerifierKey),
+        CodeChallenge = HttpContext.Session.GetString(CodeChallengeKey),
         AccessToken = HttpContext.Session.GetString(AccessTokenKey),
         TokenType = HttpContext.Session.GetString(TokenTypeKey),
         ExpiresIn = HttpContext.Session.GetString(ExpiresInKey),
@@ -538,4 +579,14 @@ public class HomeController(IHttpClientFactory httpClientFactory, IConfiguration
     }
 
     private static string GenerateState() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+
+    // RFC 7636 §4.1: 32 random bytes base64url-encoded gives a 43-char verifier (the minimum length).
+    private static string GenerateCodeVerifier() => Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+
+    // RFC 7636 §4.2: code_challenge = BASE64URL(SHA256(ASCII(code_verifier))).
+    private static string ComputeS256Challenge(string codeVerifier) =>
+        Base64UrlEncode(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(codeVerifier)));
+
+    private static string Base64UrlEncode(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }

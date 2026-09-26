@@ -18,6 +18,10 @@
                 Text="Authorization Code"
                 Clicked="OnAuthorizationCodeClicked"
                 HorizontalOptions="Fill" />
+            <Button
+                Text="Authorization Code + PKCE"
+                Clicked="OnAuthorizationCodePkceClicked"
+                HorizontalOptions="Fill" />
         </VerticalStackLayout>
     </ScrollView>
 

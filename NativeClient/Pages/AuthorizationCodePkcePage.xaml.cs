@@ -7,16 +7,21 @@ using NativeClient.Services;
 
 namespace NativeClient.Pages;
 
-public partial class AuthorizationCodePage : ContentPage
+// Same flow as AuthorizationCodePage, but as a true public client: it registers with
+// token_endpoint_auth_method "none" (no secret — anything shipped in or handed to an installed
+// app can be extracted), and proves at /token that it's the app that started the request by
+// presenting the PKCE code_verifier whose S256 hash it sent to /authorize.
+public partial class AuthorizationCodePkcePage : ContentPage
 {
     private readonly OAuthService _oauth = new();
 
     private string? _state;
+    private string? _codeVerifier;
     private string? _code;
     private string? _accessToken;
     private string? _refreshToken;
 
-    public AuthorizationCodePage()
+    public AuthorizationCodePkcePage()
     {
         InitializeComponent();
         LoadDefaults();
@@ -24,8 +29,6 @@ public partial class AuthorizationCodePage : ContentPage
 
     // Defaults target the Android emulator's loopback alias (10.0.2.2 = the host machine's
     // localhost) — a physical device on the same network would need the host's LAN IP instead.
-    // Client ID/secret are left blank — this client has no static credentials baked in; it
-    // registers itself dynamically (RFC 7591) the first time it starts an authorization request.
     private void LoadDefaults()
     {
         RegisterEndpointEntry.Text = "http://10.0.2.2:5001/register";
@@ -33,14 +36,12 @@ public partial class AuthorizationCodePage : ContentPage
         TokenEndpointEntry.Text = "http://10.0.2.2:5001/token";
         ResourceEndpointEntry.Text = "http://10.0.2.2:5002";
         ClientIdEntry.Text = "";
-        ClientSecretEntry.Text = "";
         RedirectUriEntry.Text = "nativeclient://callback";
         ScopeEntry.Text = "read write delete";
     }
 
-    // RFC 7591 dynamic client registration: a real install would do this once on first launch and
-    // persist the result; here it happens lazily, the first time a token is needed and no
-    // client_id is on hand yet, which keeps the demo to a single "Start Authorization Request" tap.
+    // RFC 7591 dynamic client registration, as a public client. The AS defaults require_pkce to
+    // true for "none" clients (and refuses to turn it off), so there's no need to ask for it.
     private async Task<bool> RegisterClientAsync()
     {
         var request = new HttpRequestMessage(HttpMethod.Post, RegisterEndpointEntry.Text)
@@ -48,11 +49,9 @@ public partial class AuthorizationCodePage : ContentPage
             Content = JsonContent.Create(new ClientRegistrationRequest
             {
                 RedirectUris = [RedirectUriEntry.Text ?? ""],
-                ClientName = "Native Client",
+                ClientName = "Native Client (PKCE)",
                 Scope = ScopeEntry.Text ?? "",
-                // Explicit rather than relying on the server's defaults — this page's "Refresh
-                // Access Token" button needs refresh_token too, not just authorization_code.
-                TokenEndpointAuthMethod = "secret_basic",
+                TokenEndpointAuthMethod = "none",
                 GrantTypes = ["authorization_code", "refresh_token"],
                 ResponseTypes = ["code"],
             }),
@@ -75,7 +74,6 @@ public partial class AuthorizationCodePage : ContentPage
         }
 
         ClientIdEntry.Text = registration.ClientId;
-        ClientSecretEntry.Text = registration.ClientSecret ?? "";
         return true;
     }
 
@@ -90,6 +88,12 @@ public partial class AuthorizationCodePage : ContentPage
 
         _state = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         StateLabel.Text = _state;
+        // A fresh verifier per authorization request — it stays in this page's memory and only
+        // leaves the device on the back-channel /token call; the front channel only sees its hash.
+        _codeVerifier = OAuthService.CreateCodeVerifier();
+        var codeChallenge = OAuthService.CreateS256Challenge(_codeVerifier);
+        CodeVerifierLabel.Text = _codeVerifier;
+        CodeChallengeLabel.Text = codeChallenge;
         _code = null;
         CodeLabel.Text = "—";
 
@@ -100,8 +104,11 @@ public partial class AuthorizationCodePage : ContentPage
             ["redirect_uri"] = RedirectUriEntry.Text ?? "",
             ["scope"] = ScopeEntry.Text ?? "",
             ["state"] = _state,
+            ["code_challenge"] = codeChallenge,
+            ["code_challenge_method"] = "S256",
         };
         var authorizeUrl = OAuthService.BuildUrl(AuthorizeEndpointEntry.Text ?? "", query);
+        AppendLog("Redirect to authorization server", $"Request: GET {authorizeUrl}");
 
         try
         {
@@ -111,6 +118,14 @@ public partial class AuthorizationCodePage : ContentPage
                     Url = new Uri(authorizeUrl),
                     CallbackUrl = new Uri(RedirectUriEntry.Text ?? ""),
                 });
+
+            if (result.Properties.TryGetValue("error", out var error))
+            {
+                result.Properties.TryGetValue("error_description", out var description);
+                AppendLog("Redirect from authorization server — error", $"error: {error}\ndescription: {description ?? "(none)"}");
+                SetError("Authorization server returned an error — see the log below.");
+                return;
+            }
 
             result.Properties.TryGetValue("state", out var returnedState);
             if (returnedState != _state)
@@ -146,6 +161,8 @@ public partial class AuthorizationCodePage : ContentPage
             return;
         }
 
+        // No Authorization header — a "none" client identifies itself with client_id in the body,
+        // and the code_verifier stands in for the secret it doesn't have.
         var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpointEntry.Text)
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -153,9 +170,10 @@ public partial class AuthorizationCodePage : ContentPage
                 ["grant_type"] = "authorization_code",
                 ["code"] = _code,
                 ["redirect_uri"] = RedirectUriEntry.Text ?? "",
+                ["client_id"] = ClientIdEntry.Text ?? "",
+                ["code_verifier"] = _codeVerifier ?? "",
             }),
         };
-        request.Headers.Authorization = OAuthService.BasicAuthHeader(ClientIdEntry.Text ?? "", ClientSecretEntry.Text ?? "");
 
         var (response, body, log) = await _oauth.SendAndLogAsync("Exchange code for tokens", request);
         AppendLog(log);
@@ -185,9 +203,9 @@ public partial class AuthorizationCodePage : ContentPage
             {
                 ["grant_type"] = "refresh_token",
                 ["refresh_token"] = _refreshToken,
+                ["client_id"] = ClientIdEntry.Text ?? "",
             }),
         };
-        request.Headers.Authorization = OAuthService.BasicAuthHeader(ClientIdEntry.Text ?? "", ClientSecretEntry.Text ?? "");
 
         var (response, body, log) = await _oauth.SendAndLogAsync("Refresh access token", request);
         AppendLog(log);
@@ -231,11 +249,14 @@ public partial class AuthorizationCodePage : ContentPage
     private void OnResetClicked(object? sender, EventArgs e)
     {
         _state = null;
+        _codeVerifier = null;
         _code = null;
         _accessToken = null;
         _refreshToken = null;
 
         StateLabel.Text = "—";
+        CodeVerifierLabel.Text = "—";
+        CodeChallengeLabel.Text = "—";
         CodeLabel.Text = "—";
         AccessTokenLabel.Text = "—";
         TokenTypeLabel.Text = "—";

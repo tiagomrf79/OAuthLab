@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NativeClient.Models;
@@ -57,6 +58,22 @@ public class OAuthService
         var credentials = $"{Uri.EscapeDataString(clientId)}:{Uri.EscapeDataString(clientSecret)}";
         return new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)));
     }
+
+    // RFC 7636 §4.1: 32 random bytes base64url-encoded gives a 43-char verifier (the minimum length).
+    public static string CreateCodeVerifier() => Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+
+    // RFC 7636 §4.2: code_challenge = BASE64URL(SHA256(ASCII(code_verifier))).
+    public static string CreateS256Challenge(string codeVerifier) =>
+        Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
+
+    public static string BuildUrl(string baseUrl, Dictionary<string, string> query)
+    {
+        var pairs = query.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}");
+        return $"{baseUrl}?{string.Join('&', pairs)}";
+    }
+
+    private static string Base64UrlEncode(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static string FormatBody(string? text)
     {

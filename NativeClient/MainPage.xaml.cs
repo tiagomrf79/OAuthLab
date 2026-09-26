@@ -11,4 +11,9 @@ public partial class MainPage : ContentPage
     {
         await Shell.Current.GoToAsync(nameof(Pages.AuthorizationCodePage));
     }
+
+    private async void OnAuthorizationCodePkceClicked(object? sender, EventArgs e)
+    {
+        await Shell.Current.GoToAsync(nameof(Pages.AuthorizationCodePkcePage));
+    }
 }

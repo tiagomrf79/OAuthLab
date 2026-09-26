@@ -6,6 +6,11 @@ internal static class SessionKeys
     {
         public const string StateKey = "oauth.state";
         public const string CodeKey = "oauth.code";
+        public const string CodeVerifierKey = "oauth.code_verifier";
+        public const string CodeChallengeKey = "oauth.code_challenge";
+        // Which flow page started the pending /authorize — both code flows share one redirect URI
+        // (/callback), so this is how the callback knows which page to send the user back to.
+        public const string FlowKey = "oauth.flow";
         public const string AccessTokenKey = "oauth.access_token";
         public const string TokenTypeKey = "oauth.token_type";
         public const string ExpiresInKey = "oauth.expires_in";

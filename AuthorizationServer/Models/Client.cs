@@ -16,6 +16,11 @@ public class Client
     public required string[] ResponseTypes { get; init; }
     public required long ClientIdIssuedAt { get; init; }
 
+    // Whether /authorize rejects a response_type=code request that carries no code_challenge.
+    // Clients that don't require PKCE may still send one — /token verifies it whenever the issued
+    // code carries a challenge, regardless of this flag.
+    public required bool RequirePkce { get; init; }
+
     // RFC 7592 client configuration management — a bearer token, separate from ClientSecret, that
     // authorizes GET/PUT/DELETE on this client's own registration at /register/{client_id}. Null
     // for the statically-seeded clients: they weren't dynamically registered, so nothing can ever

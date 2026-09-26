@@ -1,4 +1,5 @@
 using System.Text;
+using AuthorizationServer;
 using AuthorizationServer.Data;
 using AuthorizationServer.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -17,6 +18,16 @@ builder.Services
         options.Cookie.Name = "AuthorizationServer.Auth";
     });
 
+// PublicClient's authorization code + PKCE page calls /token directly from browser JS, so the
+// browser enforces CORS there. Applied to /token only — /authorize and /approve are full-page
+// navigations, not fetches. Any origin is allowed since Vite's dev port can shift (same trade-off
+// as ProtectedResource) — this is a teaching sandbox, not production.
+const string TokenCorsPolicy = "TokenEndpoint";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(TokenCorsPolicy, policy => policy.AllowAnyOrigin().AllowAnyHeader().WithMethods("POST"));
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -28,6 +39,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseRouting();
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -65,7 +77,7 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
         "password" => HandlePasswordGrant(form, client, store),
         _ => Results.Json(new { error = "unsupported_grant_type" }, statusCode: 400),
     };
-});
+}).RequireCors(TokenCorsPolicy);
 
 // RFC 7591 dynamic client registration — lets a native client obtain its own client_id/secret at
 // runtime instead of shipping a static one baked into every install (see NativeClient's
@@ -99,6 +111,7 @@ app.MapPost("/register", async (HttpRequest request, InMemoryStore store) =>
         TokenEndpointAuthMethod = metadata.TokenEndpointAuthMethod,
         GrantTypes = metadata.GrantTypes,
         ResponseTypes = metadata.ResponseTypes,
+        RequirePkce = metadata.RequirePkce,
     };
     store.Clients[client.ClientId] = client;
 
@@ -154,6 +167,7 @@ app.MapPut("/register/{clientId}", async (string clientId, HttpRequest request, 
         TokenEndpointAuthMethod = metadata.TokenEndpointAuthMethod,
         GrantTypes = metadata.GrantTypes,
         ResponseTypes = metadata.ResponseTypes,
+        RequirePkce = metadata.RequirePkce,
     };
     store.Clients[clientId] = updated;
 
@@ -357,13 +371,22 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
 
     var scope = string.Join(' ', (body.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(InMemoryStore.KnownScopes));
 
+    // A "none" client has no secret, so PKCE is the only thing binding its code to the app that
+    // requested it — it can't opt out. Confidential clients default to optional PKCE.
+    if (authMethod == "none" && body.RequirePkce == false)
+    {
+        return ("invalid_client_metadata", null);
+    }
+    var requirePkce = body.RequirePkce ?? authMethod == "none";
+
     var metadata = new ClientMetadata(
         Name: string.IsNullOrWhiteSpace(body.ClientName) ? "Dynamically Registered Client" : body.ClientName,
         RedirectUris: body.RedirectUris,
         AllowedScopes: scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
         TokenEndpointAuthMethod: authMethod,
         GrantTypes: grantTypes,
-        ResponseTypes: responseTypes);
+        ResponseTypes: responseTypes,
+        RequirePkce: requirePkce);
 
     return (null, metadata);
 }
@@ -380,6 +403,7 @@ static object BuildRegistrationResponse(Client client, HttpRequest request) => n
     grant_types = client.GrantTypes,
     response_types = client.ResponseTypes,
     scope = string.Join(' ', client.AllowedScopes),
+    require_pkce = client.RequirePkce,
     registration_access_token = client.RegistrationAccessToken,
     registration_client_uri = client.RegistrationAccessToken is null
         ? null
@@ -396,6 +420,25 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         || authCode.ClientId != client.ClientId
         || authCode.RedirectUri != redirectUri
         || authCode.ExpiresAt < DateTimeOffset.UtcNow)
+    {
+        return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
+    }
+
+    // PKCE (RFC 7636) is decided per code, not per client: a code issued with a challenge needs the
+    // matching verifier, and a code issued without one must not be redeemed with a verifier — that
+    // mismatch means the client started a PKCE request but got someone else's code back (the
+    // injection/downgrade case in RFC 9700 §2.1.1). The code is already burned above either way.
+    var codeVerifier = form["code_verifier"].ToString();
+    if (authCode.CodeChallenge is null)
+    {
+        // RequirePkce is enforced at /authorize; this only catches a client whose registration was
+        // switched to require PKCE (PUT /register/{id}) after this code was issued.
+        if (!string.IsNullOrEmpty(codeVerifier) || client.RequirePkce)
+        {
+            return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
+        }
+    }
+    else if (string.IsNullOrEmpty(codeVerifier) || !Pkce.VerifierMatches(codeVerifier, authCode.CodeChallenge))
     {
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
@@ -549,4 +592,5 @@ internal record ClientMetadata(
     string[] AllowedScopes,
     string TokenEndpointAuthMethod,
     string[] GrantTypes,
-    string[] ResponseTypes);
+    string[] ResponseTypes,
+    bool RequirePkce);

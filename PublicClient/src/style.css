@@ -77,6 +77,18 @@ header.app-header p {
   margin: 0;
 }
 
+header.app-header .back-link {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+header.app-header .back-link:hover {
+  text-decoration: underline;
+}
+
 .notice {
   padding: 10px 14px;
   border-radius: 6px;

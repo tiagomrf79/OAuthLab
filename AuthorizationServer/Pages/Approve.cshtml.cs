@@ -80,6 +80,8 @@ public class ApproveModel(InMemoryStore store) : PageModel
             Scope = grantedScope,
             Subject = subject,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(180),
+            CodeChallenge = pending.CodeChallenge,
+            CodeChallengeMethod = pending.CodeChallengeMethod,
         };
 
         return Redirect(BuildRedirectUrl(new() { ["code"] = code }));

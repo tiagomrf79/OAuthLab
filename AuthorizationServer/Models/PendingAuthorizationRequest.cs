@@ -9,4 +9,8 @@ public class PendingAuthorizationRequest
     public required string RedirectUri { get; init; }
     public required string Scope { get; init; }
     public required string State { get; init; }
+
+    // RFC 7636 — null when the client didn't use PKCE for this request.
+    public string? CodeChallenge { get; init; }
+    public string? CodeChallengeMethod { get; init; }
 }

@@ -43,23 +43,28 @@ public class InMemoryStore
             GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
             ResponseTypes = ["code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            // Keeps the classic code flow working as-is; it can still send a code_challenge if it wants.
+            RequirePkce = false,
         },
         new Client
         {
-            // No secret — this is the implicit-grant public client (PublicClient); it can't keep
-            // one confidential in shipped browser JS. Redirect URI matches Vite's default dev
-            // port (5173) — update this (and PublicClient's VITE_CLIENT_ID/.env) if that changes.
+            // No secret — PublicClient is browser JS and can't keep one confidential. Each flow has
+            // its own page and redirect URI on Vite's default dev port (5173) — update these (and
+            // PublicClient's .env) if that changes.
             ClientId = "public-client",
             ClientSecret = "",
             Name = "Public Client",
-            RedirectUris = ["http://localhost:5173/"],
+            RedirectUris = ["http://localhost:5173/implicit/", "http://localhost:5173/code-pkce/"],
             AllowedScopes = ["read", "write", "delete"],
-            // Never calls /token at all — the implicit grant returns its token straight from
-            // /authorize — so GrantTypes is empty; "none" reflects that it has no secret to present.
+            // "token" for the implicit page, "code" for the authorization code + PKCE page. No
+            // refresh_token: the refresh grant doesn't rotate tokens yet, and a non-rotating
+            // refresh token held in browser JS is exactly what RFC 9700 §4.14 warns against.
             TokenEndpointAuthMethod = "none",
-            GrantTypes = [],
-            ResponseTypes = ["token"],
+            GrantTypes = ["authorization_code"],
+            ResponseTypes = ["token", "code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            // With no secret, PKCE is the only thing tying the code to the app that asked for it.
+            RequirePkce = true,
         },
         // No static entry for NativeClient — it has no baked-in client_id/secret. It registers
         // itself at runtime via POST /register (RFC 7591) and gets added to this dictionary from there.
