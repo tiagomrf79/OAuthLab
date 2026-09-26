@@ -28,7 +28,8 @@ public class ClientRegistrationRequest
     [JsonPropertyName("require_pkce")]
     public bool? RequirePkce { get; set; }
 
-    // Also a lab-specific extension: "jwt" (the default) or "reference". See Client.AccessTokenFormat.
+    // Also a lab-specific extension: "jwt" (the default), "jwt-minimal" or "reference". See
+    // Client.AccessTokenFormat.
     [JsonPropertyName("access_token_format")]
     public string? AccessTokenFormat { get; set; }
 }

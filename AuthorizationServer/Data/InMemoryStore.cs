@@ -18,7 +18,7 @@ public class InMemoryStore
     public static readonly string[] KnownAuthMethods = ["secret_basic", "secret_post", "none"];
     public static readonly string[] KnownGrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"];
     public static readonly string[] KnownResponseTypes = ["code", "token"];
-    public static readonly string[] KnownAccessTokenFormats = ["jwt", "reference"];
+    public static readonly string[] KnownAccessTokenFormats = ["jwt", "jwt-minimal", "reference"];
 
     // Dynamically registered clients (RFC 7591) are restricted to this narrower set — the same
     // restriction the "OAuth 2 in Action" reference registration endpoint applies.
@@ -65,6 +65,22 @@ public class InMemoryStore
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             RequirePkce = false,
             AccessTokenFormat = "reference",
+        },
+        new Client
+        {
+            // The third variant of the same client: a signed JWT that says nothing about who or what
+            // it's for, so ProtectedResource verifies it locally and then introspects it anyway.
+            ClientId = "confidential-client-jwt-minimal",
+            ClientSecret = "confidential-client-jwt-minimal-secret",
+            Name = "Confidential Client (minimal JWTs)",
+            RedirectUris = ["http://localhost:5000/callback"],
+            AllowedScopes = ["read", "write", "delete"],
+            TokenEndpointAuthMethod = "secret_basic",
+            GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
+            ResponseTypes = ["code"],
+            ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            RequirePkce = false,
+            AccessTokenFormat = "jwt-minimal",
         },
         new Client
         {

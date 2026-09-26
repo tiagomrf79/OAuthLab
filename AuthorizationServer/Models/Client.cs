@@ -23,8 +23,10 @@ public class Client
 
     // What kind of access token this client gets — the authorization server's call, not the
     // client's (same idea as Duende IdentityServer's per-client AccessTokenType):
-    //   "jwt"       — a signed RFC 9068 JWT the resource server can verify on its own.
-    //   "reference" — a random string that means nothing without asking /introspect (RFC 7662).
+    //   "jwt"         — a signed RFC 9068 JWT the resource server can verify on its own.
+    //   "jwt-minimal" — a signed JWT with only iss/aud/exp/iat/jti: checkable locally, but who it's
+    //                   for and what it grants still has to come from /introspect.
+    //   "reference"   — a random string that means nothing without asking /introspect (RFC 7662).
     public required string AccessTokenFormat { get; init; }
 
     // RFC 7592 client configuration management — a bearer token, separate from ClientSecret, that

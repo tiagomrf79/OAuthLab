@@ -5,7 +5,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpClient();
 
-// JWTs are verified locally, reference tokens are introspected — see DispatchingAccessTokenValidator.
+// Full JWTs are verified locally, reference tokens are introspected, and minimal JWTs get both —
+// see DispatchingAccessTokenValidator.
 builder.Services.AddSingleton<JwtAccessTokenValidator>();
 builder.Services.AddSingleton<IntrospectionAccessTokenValidator>();
 builder.Services.AddSingleton<IAccessTokenValidator, DispatchingAccessTokenValidator>();

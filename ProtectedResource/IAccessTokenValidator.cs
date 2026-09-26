@@ -1,9 +1,9 @@
 namespace ProtectedResource;
 
-// The two ways this resource server can decide whether a bearer token is good — which one runs is
-// picked per token by DispatchingAccessTokenValidator, based on what kind of token it is:
+// Decides whether a bearer token is good and what it grants. DispatchingAccessTokenValidator is the
+// one the endpoints use; it combines the two underlying checks depending on the kind of token:
 //   JwtAccessTokenValidator           — verify a JWT's signature and claims locally (RFC 9068).
-//   IntrospectionAccessTokenValidator — ask the authorization server about an opaque token (RFC 7662).
+//   IntrospectionAccessTokenValidator — ask the authorization server (RFC 7662).
 public interface IAccessTokenValidator
 {
     // Null means the token must be refused as invalid_token; the reason is deliberately not surfaced.

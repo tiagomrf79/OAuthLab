@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace ProtectedResource;
 
 // RFC 7662 token introspection: instead of reading the token, hand it back to the authorization
-// server and ask whether it's active. Used for reference tokens (clients registered with
-// AccessTokenFormat "reference"), which are random strings with nothing in them to read.
+// server and ask whether it's active. Used for reference tokens, which are random strings with
+// nothing in them to read, and for minimal JWTs once they've passed local verification.
 //
 // The trade-off against JwtAccessTokenValidator: one network round trip per request (nothing is
 // cached, so every call shows up at /introspect), in exchange for an answer that reflects the

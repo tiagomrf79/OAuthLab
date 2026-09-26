@@ -5,15 +5,14 @@ using System.Text.Json;
 
 namespace ProtectedResource;
 
-// Validates the RFC 9068 JWT access tokens minted by AuthorizationServer's AccessTokenIssuer, entirely
-// locally — the only call back to the authorization server is fetching its public signing keys
-// (JWKS). Hand-rolled to mirror the issuer so each check is visible; a real resource server would
-// use a vetted library (e.g. Microsoft.AspNetCore.Authentication.JwtBearer) instead.
+// Verifies the JWT access tokens minted by AuthorizationServer's AccessTokenIssuer, entirely locally
+// — the only call back to the authorization server is fetching its public signing keys (JWKS).
+// Hand-rolled to mirror the issuer so each check is visible; a real resource server would use a
+// vetted library (e.g. Microsoft.AspNetCore.Authentication.JwtBearer) instead.
 //
-// Since nothing is looked up per token, a token stays valid here until it expires even if the
+// Since nothing is looked up per token, a full JWT stays valid here until it expires even if the
 // authorization server has forgotten it — see IntrospectionAccessTokenValidator for the alternative.
 public sealed class JwtAccessTokenValidator(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<JwtAccessTokenValidator> logger)
-    : IAccessTokenValidator
 {
     // Tolerates small clock drift between this server and the authorization server.
     private static readonly TimeSpan ClockSkew = TimeSpan.FromSeconds(30);
@@ -31,7 +30,10 @@ public sealed class JwtAccessTokenValidator(IHttpClientFactory httpClientFactory
     private Dictionary<string, RSA> keys = [];
     private DateTimeOffset lastRefresh = DateTimeOffset.MinValue;
 
-    public async Task<ValidatedAccessToken?> ValidateAsync(string token)
+    // Null means the token is rejected outright. Otherwise the signature, iss, aud and exp all check
+    // out, and Access holds what the token grants — or is null when the token doesn't say (a
+    // "jwt-minimal" token has no sub/client_id/scope), leaving that to be introspected.
+    public async Task<VerifiedJwt?> VerifyAsync(string token)
     {
         var parts = token.Split('.');
         if (parts.Length != 3)
@@ -90,15 +92,17 @@ public sealed class JwtAccessTokenValidator(IHttpClientFactory httpClientFactory
             return null;
         }
 
+        // All three or it doesn't count — a token missing its scope must not be read as "no scopes",
+        // and one missing its subject must not be acted on for nobody in particular.
         var subject = GetString(payload, "sub");
         var clientId = GetString(payload, "client_id");
-        if (subject is null || clientId is null)
+        var scope = GetString(payload, "scope");
+        if (subject is null || clientId is null || scope is null)
         {
-            return null;
+            return new VerifiedJwt(Access: null);
         }
 
-        var scopes = (GetString(payload, "scope") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return new ValidatedAccessToken(subject, clientId, scopes);
+        return new VerifiedJwt(new ValidatedAccessToken(subject, clientId, scope.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
     }
 
     private async Task<RSA?> GetKeyAsync(string kid)
@@ -179,3 +183,5 @@ public sealed class JwtAccessTokenValidator(IHttpClientFactory httpClientFactory
             _ => false,
         };
 }
+
+public record VerifiedJwt(ValidatedAccessToken? Access);

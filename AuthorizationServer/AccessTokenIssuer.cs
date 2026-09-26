@@ -13,10 +13,14 @@ namespace AuthorizationServer;
 //                 instead of having to call back here. Hand-rolled rather than pulled from a JWT
 //                 library so the structure (header.payload.signature) stays visible — this is a
 //                 teaching sandbox, not production.
+//   "jwt-minimal" — the same signed JWT with sub/client_id/scope left out: a resource server can
+//                 still reject forged, expired or misdirected tokens locally, and a signed "iss"
+//                 tells it which authorization server to introspect at — but who the token is for
+//                 and what it grants only ever come from /introspect.
 //   "reference" — a random string carrying no information at all; the only way to learn what it
 //                 grants is to ask /introspect (RFC 7662).
 //
-// Both kinds are recorded in InMemoryStore.AccessTokens. For a reference token that record *is*
+// All kinds are recorded in InMemoryStore.AccessTokens. For a reference token that record *is*
 // the token's meaning; for a JWT it's what lets /introspect answer about it (and, later, revoke it).
 public sealed class AccessTokenIssuer : IDisposable
 {
@@ -49,9 +53,12 @@ public sealed class AccessTokenIssuer : IDisposable
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(Lifetime);
 
-        var token = client.AccessTokenFormat == "reference"
-            ? InMemoryStore.GenerateToken()
-            : CreateJwt(client.ClientId, subject, scope, now, expiresAt);
+        var token = client.AccessTokenFormat switch
+        {
+            "reference" => InMemoryStore.GenerateToken(),
+            "jwt-minimal" => CreateJwt(client.ClientId, subject, scope, now, expiresAt, minimal: true),
+            _ => CreateJwt(client.ClientId, subject, scope, now, expiresAt, minimal: false),
+        };
 
         store.AccessTokens[token] = new AccessToken
         {
@@ -65,7 +72,7 @@ public sealed class AccessTokenIssuer : IDisposable
         return token;
     }
 
-    private string CreateJwt(string clientId, string subject, string scope, DateTimeOffset now, DateTimeOffset expiresAt)
+    private string CreateJwt(string clientId, string subject, string scope, DateTimeOffset now, DateTimeOffset expiresAt, bool minimal)
     {
         // RFC 9068 §2.1: "at+jwt" marks this as an access token, so it can't be confused with (or
         // replayed as) an ID token or any other JWT signed by the same key.
@@ -76,18 +83,25 @@ public sealed class AccessTokenIssuer : IDisposable
             ["kid"] = keyId,
         };
 
-        // RFC 9068 §2.2 required claims, plus scope (§2.2.3) so the resource can enforce it.
+        // Just enough to verify the token locally: who issued it, who it's for, when it expires.
         var payload = new Dictionary<string, object>
         {
             ["iss"] = Issuer,
-            ["sub"] = subject,
             ["aud"] = Audience,
-            ["client_id"] = clientId,
-            ["scope"] = scope,
             ["iat"] = now.ToUnixTimeSeconds(),
             ["exp"] = expiresAt.ToUnixTimeSeconds(),
             ["jti"] = InMemoryStore.GenerateToken(16),
         };
+
+        // RFC 9068 §2.2 also requires sub and client_id, plus scope (§2.2.3) so the resource can
+        // enforce it. A minimal token deliberately leaves these out — which strictly makes it not an
+        // RFC 9068 token, but it keeps "at+jwt" so it still can't be confused with any other JWT.
+        if (!minimal)
+        {
+            payload["sub"] = subject;
+            payload["client_id"] = clientId;
+            payload["scope"] = scope;
+        }
 
         var signingInput = $"{Base64Url(JsonSerializer.SerializeToUtf8Bytes(header, JsonOptions))}.{Base64Url(JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions))}";
         var signature = signingKey.SignData(Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
