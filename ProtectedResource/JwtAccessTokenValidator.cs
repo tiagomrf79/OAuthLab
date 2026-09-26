@@ -11,8 +11,9 @@ namespace ProtectedResource;
 // use a vetted library (e.g. Microsoft.AspNetCore.Authentication.JwtBearer) instead.
 //
 // Since nothing is looked up per token, a token stays valid here until it expires even if the
-// authorization server has forgotten it — revocation would need introspection (RFC 7662).
-public sealed class AccessTokenValidator(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<AccessTokenValidator> logger)
+// authorization server has forgotten it — see IntrospectionAccessTokenValidator for the alternative.
+public sealed class JwtAccessTokenValidator(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<JwtAccessTokenValidator> logger)
+    : IAccessTokenValidator
 {
     // Tolerates small clock drift between this server and the authorization server.
     private static readonly TimeSpan ClockSkew = TimeSpan.FromSeconds(30);
@@ -178,5 +179,3 @@ public sealed class AccessTokenValidator(IHttpClientFactory httpClientFactory, I
             _ => false,
         };
 }
-
-public record ValidatedAccessToken(string Subject, string ClientId, string[] Scopes);

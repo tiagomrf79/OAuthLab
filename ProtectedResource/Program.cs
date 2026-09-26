@@ -4,7 +4,11 @@ using ProtectedResource;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpClient();
-builder.Services.AddSingleton<AccessTokenValidator>();
+
+// JWTs are verified locally, reference tokens are introspected — see DispatchingAccessTokenValidator.
+builder.Services.AddSingleton<JwtAccessTokenValidator>();
+builder.Services.AddSingleton<IntrospectionAccessTokenValidator>();
+builder.Services.AddSingleton<IAccessTokenValidator, DispatchingAccessTokenValidator>();
 
 // PublicClient calls this endpoint directly from browser JS (unlike ConfidentialClient, which
 // calls it server-to-server), so the browser enforces CORS. Vite's dev port can shift, so any
@@ -21,13 +25,13 @@ app.UseRouting();
 app.UseCors();
 
 // Each operation requires the scope of the same name, so a token granted only "read" can't write.
-app.MapGet("/resource/read", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "read", "Read op executed."));
-app.MapPost("/resource/write", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "write", "Write op executed."));
-app.MapDelete("/resource/delete", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "delete", "Delete op executed."));
+app.MapGet("/resource/read", (HttpRequest request, IAccessTokenValidator validator) => HandleAsync(request, validator, "read", "Read op executed."));
+app.MapPost("/resource/write", (HttpRequest request, IAccessTokenValidator validator) => HandleAsync(request, validator, "write", "Write op executed."));
+app.MapDelete("/resource/delete", (HttpRequest request, IAccessTokenValidator validator) => HandleAsync(request, validator, "delete", "Delete op executed."));
 
 app.Run();
 
-static async Task<IResult> HandleAsync(HttpRequest request, AccessTokenValidator validator, string requiredScope, string message)
+static async Task<IResult> HandleAsync(HttpRequest request, IAccessTokenValidator validator, string requiredScope, string message)
 {
     var accessToken = await ExtractAccessToken(request);
     if (string.IsNullOrWhiteSpace(accessToken))

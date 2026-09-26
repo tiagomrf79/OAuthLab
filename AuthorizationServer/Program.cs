@@ -84,6 +84,54 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store, AccessTok
 // JWTs AccessTokenIssuer mints without sharing any secret with this server.
 app.MapGet("/.well-known/jwks.json", (AccessTokenIssuer tokens) => Results.Json(tokens.GetJsonWebKeySet()));
 
+// RFC 7662 token introspection — the alternative to verifying the JWT locally: a protected resource
+// hands the token back here and asks whether it's still active. Slower (a network hop per check)
+// but authoritative, since it reflects this server's current record rather than what the token
+// said when it was minted — a token this server has forgotten (or, later, revoked) is inactive
+// here even while its signature and exp still look fine.
+app.MapPost("/introspect", async (HttpRequest request, InMemoryStore store, AccessTokenIssuer tokens) =>
+{
+    // §2.1: the caller must be authorized, otherwise anyone could use this endpoint to find out
+    // whether a token they found is live. Only registered resource servers get in, not clients.
+    if (!TryParseBasicCredentials(request.Headers.Authorization.ToString(), out var resourceId, out var resourceSecret)
+        || store.FindResourceServer(resourceId) is not { } resource
+        || resource.ResourceSecret != resourceSecret)
+    {
+        request.HttpContext.Response.Headers.WWWAuthenticate = "Basic";
+        return Results.Json(new { error = "invalid_client" }, statusCode: 401);
+    }
+
+    if (!request.HasFormContentType)
+    {
+        return Results.Json(new { error = "invalid_request" }, statusCode: 400);
+    }
+
+    var form = await request.ReadFormAsync();
+
+    // Only access tokens are introspectable — a resource server has no business learning anything
+    // about refresh tokens, which only the client and this server should ever see. token_type_hint
+    // is optional (§2.1) and ignored, since there's only one kind of token to look in.
+    if (!store.AccessTokens.TryGetValue(form["token"].ToString(), out var accessToken)
+        || accessToken.ExpiresAt < DateTimeOffset.UtcNow)
+    {
+        // §2.2: an inactive token gets exactly this and nothing else — no hint as to *why* it's
+        // inactive (unknown vs. expired vs. revoked), which would only help someone probing tokens.
+        return Results.Json(new { active = false });
+    }
+
+    return Results.Json(new
+    {
+        active = true,
+        scope = accessToken.Scope,
+        client_id = accessToken.ClientId,
+        sub = accessToken.Subject,
+        token_type = "Bearer",
+        exp = accessToken.ExpiresAt.ToUnixTimeSeconds(),
+        iss = tokens.Issuer,
+        aud = tokens.Audience,
+    });
+});
+
 // RFC 7591 dynamic client registration — lets a native client obtain its own client_id/secret at
 // runtime instead of shipping a static one baked into every install (see NativeClient's
 // AuthorizationCodePage, which calls this the first time it needs a token and has none yet).
@@ -117,6 +165,7 @@ app.MapPost("/register", async (HttpRequest request, InMemoryStore store) =>
         GrantTypes = metadata.GrantTypes,
         ResponseTypes = metadata.ResponseTypes,
         RequirePkce = metadata.RequirePkce,
+        AccessTokenFormat = metadata.AccessTokenFormat,
     };
     store.Clients[client.ClientId] = client;
 
@@ -173,6 +222,7 @@ app.MapPut("/register/{clientId}", async (string clientId, HttpRequest request, 
         GrantTypes = metadata.GrantTypes,
         ResponseTypes = metadata.ResponseTypes,
         RequirePkce = metadata.RequirePkce,
+        AccessTokenFormat = metadata.AccessTokenFormat,
     };
     store.Clients[clientId] = updated;
 
@@ -205,23 +255,12 @@ static bool TryAuthenticateClient(HttpRequest request, IFormCollection form, InM
     var header = request.Headers.Authorization.ToString();
     if (header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
     {
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header["Basic ".Length..].Trim()));
-            var separatorIndex = decoded.IndexOf(':');
-            if (separatorIndex < 0)
-            {
-                return false;
-            }
-
-            headerClientId = Uri.UnescapeDataString(decoded[..separatorIndex]);
-            headerClientSecret = Uri.UnescapeDataString(decoded[(separatorIndex + 1)..]);
-            hasHeaderCredentials = true;
-        }
-        catch (FormatException)
+        if (!TryParseBasicCredentials(header, out headerClientId, out headerClientSecret))
         {
             return false;
         }
+
+        hasHeaderCredentials = true;
     }
 
     var bodyClientId = form["client_id"].ToString();
@@ -276,6 +315,36 @@ static bool TryAuthenticateClient(HttpRequest request, IFormCollection form, InM
 
     client = foundClient;
     return true;
+}
+
+// RFC 6749 §2.3.1: id and secret are form-urlencoded before being joined with ':' and base64'd.
+static bool TryParseBasicCredentials(string header, out string id, out string secret)
+{
+    id = "";
+    secret = "";
+
+    if (!header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    try
+    {
+        var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header["Basic ".Length..].Trim()));
+        var separatorIndex = decoded.IndexOf(':');
+        if (separatorIndex < 0)
+        {
+            return false;
+        }
+
+        id = Uri.UnescapeDataString(decoded[..separatorIndex]);
+        secret = Uri.UnescapeDataString(decoded[(separatorIndex + 1)..]);
+        return true;
+    }
+    catch (FormatException)
+    {
+        return false;
+    }
 }
 
 // A registration access token, presented as "Authorization: Bearer <token>", is a separate secret
@@ -384,6 +453,12 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
     }
     var requirePkce = body.RequirePkce ?? authMethod == "none";
 
+    var accessTokenFormat = string.IsNullOrEmpty(body.AccessTokenFormat) ? "jwt" : body.AccessTokenFormat;
+    if (!InMemoryStore.KnownAccessTokenFormats.Contains(accessTokenFormat))
+    {
+        return ("invalid_client_metadata", null);
+    }
+
     var metadata = new ClientMetadata(
         Name: string.IsNullOrWhiteSpace(body.ClientName) ? "Dynamically Registered Client" : body.ClientName,
         RedirectUris: body.RedirectUris,
@@ -391,7 +466,8 @@ static (string? Error, ClientMetadata? Metadata) ValidateClientMetadata(ClientRe
         TokenEndpointAuthMethod: authMethod,
         GrantTypes: grantTypes,
         ResponseTypes: responseTypes,
-        RequirePkce: requirePkce);
+        RequirePkce: requirePkce,
+        AccessTokenFormat: accessTokenFormat);
 
     return (null, metadata);
 }
@@ -409,6 +485,7 @@ static object BuildRegistrationResponse(Client client, HttpRequest request) => n
     response_types = client.ResponseTypes,
     scope = string.Join(' ', client.AllowedScopes),
     require_pkce = client.RequirePkce,
+    access_token_format = client.AccessTokenFormat,
     registration_access_token = client.RegistrationAccessToken,
     registration_client_uri = client.RegistrationAccessToken is null
         ? null
@@ -448,7 +525,7 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = tokens.Issue(client.ClientId, authCode.Subject, authCode.Scope);
+    var accessToken = tokens.Issue(client, authCode.Subject, authCode.Scope);
     // The refresh token stays opaque — only this server ever reads it, so there's nothing to gain
     // from making it self-contained, and a store lookup is what lets it be burned on misuse.
     var refreshToken = InMemoryStore.GenerateToken();
@@ -476,7 +553,7 @@ static IResult HandleClientCredentialsGrant(IFormCollection form, Client client,
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
     // No end user in this grant — the client is acting on its own behalf, so it is its own subject.
-    var accessToken = tokens.Issue(client.ClientId, client.ClientId, scope);
+    var accessToken = tokens.Issue(client, client.ClientId, scope);
 
     // No refresh token per RFC 6749 §4.4.3 — the client can just request a new access token with
     // its credentials again, since it authenticates directly on every call.
@@ -502,7 +579,7 @@ static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemory
 
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
-    var accessToken = tokens.Issue(client.ClientId, user.Subject, scope);
+    var accessToken = tokens.Issue(client, user.Subject, scope);
     var refreshToken = InMemoryStore.GenerateToken();
 
     store.RefreshTokens[refreshToken] = new RefreshToken
@@ -540,7 +617,7 @@ static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMe
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = tokens.Issue(client.ClientId, refreshToken.Subject, refreshToken.Scope);
+    var accessToken = tokens.Issue(client, refreshToken.Subject, refreshToken.Scope);
 
     return Results.Json(new
     {
@@ -562,4 +639,5 @@ internal record ClientMetadata(
     string TokenEndpointAuthMethod,
     string[] GrantTypes,
     string[] ResponseTypes,
-    bool RequirePkce);
+    bool RequirePkce,
+    string AccessTokenFormat);

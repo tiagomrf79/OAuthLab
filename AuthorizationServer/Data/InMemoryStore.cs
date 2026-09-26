@@ -18,6 +18,7 @@ public class InMemoryStore
     public static readonly string[] KnownAuthMethods = ["secret_basic", "secret_post", "none"];
     public static readonly string[] KnownGrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"];
     public static readonly string[] KnownResponseTypes = ["code", "token"];
+    public static readonly string[] KnownAccessTokenFormats = ["jwt", "reference"];
 
     // Dynamically registered clients (RFC 7591) are restricted to this narrower set — the same
     // restriction the "OAuth 2 in Action" reference registration endpoint applies.
@@ -37,14 +38,33 @@ public class InMemoryStore
             RedirectUris = ["http://localhost:5000/callback"],
             AllowedScopes = ["read", "write", "delete"],
             // Always sends its secret via an Authorization: Basic header (see
-            // ConfidentialClient/Controllers/HomeController.cs's BasicAuthHeader), and is the only
-            // client in this lab that exercises client_credentials/password, so it needs all four.
+            // ConfidentialClient/Controllers/HomeController.cs's BasicAuthHeader), and ConfidentialClient
+            // is the only app in this lab that exercises client_credentials/password, so it needs all four.
             TokenEndpointAuthMethod = "secret_basic",
             GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
             ResponseTypes = ["code"],
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             // Keeps the classic code flow working as-is; it can still send a code_challenge if it wants.
             RequirePkce = false,
+            // Server-to-server calls are where skipping the per-request round trip to /introspect pays off.
+            AccessTokenFormat = "jwt",
+        },
+        new Client
+        {
+            // Identical to confidential-client except for AccessTokenFormat, so the two token styles
+            // can be compared from the same ConfidentialClient pages — just switch the client
+            // id/secret in the page's config form.
+            ClientId = "confidential-client-reference",
+            ClientSecret = "confidential-client-reference-secret",
+            Name = "Confidential Client (reference tokens)",
+            RedirectUris = ["http://localhost:5000/callback"],
+            AllowedScopes = ["read", "write", "delete"],
+            TokenEndpointAuthMethod = "secret_basic",
+            GrantTypes = ["authorization_code", "refresh_token", "client_credentials", "password"],
+            ResponseTypes = ["code"],
+            ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            RequirePkce = false,
+            AccessTokenFormat = "reference",
         },
         new Client
         {
@@ -65,6 +85,9 @@ public class InMemoryStore
             ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             // With no secret, PKCE is the only thing tying the code to the app that asked for it.
             RequirePkce = true,
+            // Browser JS is where a readable token leaks furthest (devtools, extensions, logs), so
+            // this client gets one that reveals nothing — ProtectedResource has to introspect it.
+            AccessTokenFormat = "reference",
         },
         // No static entry for NativeClient — it has no baked-in client_id/secret. It registers
         // itself at runtime via POST /register (RFC 7591) and gets added to this dictionary from there.
@@ -72,6 +95,18 @@ public class InMemoryStore
 
     public ConcurrentDictionary<string, Client> Clients { get; } =
         new(SeededClients.ToDictionary(c => c.ClientId));
+
+    // Callers of /introspect (RFC 7662 §2.1 requires the endpoint to authenticate them), matching
+    // ProtectedResource's appsettings.json.
+    public List<ResourceServer> ResourceServers { get; } =
+    [
+        new ResourceServer
+        {
+            ResourceId = "protected-resource",
+            ResourceSecret = "protected-resource-secret",
+            Name = "Protected Resource",
+        },
+    ];
 
     public List<OAuthUser> Users { get; } =
     [
@@ -92,6 +127,9 @@ public class InMemoryStore
 
     public Client? FindClient(string clientId) =>
         Clients.GetValueOrDefault(clientId);
+
+    public ResourceServer? FindResourceServer(string resourceId) =>
+        ResourceServers.FirstOrDefault(r => r.ResourceId == resourceId);
 
     public OAuthUser? FindUser(string username, string password) =>
         Users.FirstOrDefault(u => u.Username == username && u.Password == password);

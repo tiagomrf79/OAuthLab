@@ -7,13 +7,17 @@ using AuthorizationServer.Models;
 
 namespace AuthorizationServer;
 
-// Mints access tokens as signed JWTs (RFC 7519) following the RFC 9068 access token profile, so a
-// protected resource can check a token's signature, expiry, audience and scope locally instead of
-// having to call back here. Hand-rolled rather than pulled from a JWT library so the structure
-// (header.payload.signature) stays visible — this is a teaching sandbox, not production.
+// Mints access tokens in whichever format the client is registered for (Client.AccessTokenFormat):
+//   "jwt"       — a signed JWT (RFC 7519) following the RFC 9068 access token profile, so a
+//                 protected resource can check its signature, expiry, audience and scope locally
+//                 instead of having to call back here. Hand-rolled rather than pulled from a JWT
+//                 library so the structure (header.payload.signature) stays visible — this is a
+//                 teaching sandbox, not production.
+//   "reference" — a random string carrying no information at all; the only way to learn what it
+//                 grants is to ask /introspect (RFC 7662).
 //
-// Every token is still recorded in InMemoryStore.AccessTokens: a JWT can't be un-issued once it's
-// out, so keeping the server-side record is what leaves room for revocation/introspection later.
+// Both kinds are recorded in InMemoryStore.AccessTokens. For a reference token that record *is*
+// the token's meaning; for a JWT it's what lets /introspect answer about it (and, later, revoke it).
 public sealed class AccessTokenIssuer : IDisposable
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(1);
@@ -23,8 +27,10 @@ public sealed class AccessTokenIssuer : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private readonly InMemoryStore store;
-    private readonly string issuer;
-    private readonly string audience;
+
+    // Exposed so /introspect can report the same iss/aud the JWT itself carries.
+    public string Issuer { get; }
+    public string Audience { get; }
 
     // Generated fresh on every start, like the rest of the in-memory state — so tokens issued before
     // a restart stop verifying, the same as opaque tokens vanishing from the store did before.
@@ -34,15 +40,33 @@ public sealed class AccessTokenIssuer : IDisposable
     public AccessTokenIssuer(InMemoryStore store, IConfiguration configuration)
     {
         this.store = store;
-        issuer = configuration["AccessToken:Issuer"] ?? throw new InvalidOperationException("AccessToken:Issuer is not configured.");
-        audience = configuration["AccessToken:Audience"] ?? throw new InvalidOperationException("AccessToken:Audience is not configured.");
+        Issuer = configuration["AccessToken:Issuer"] ?? throw new InvalidOperationException("AccessToken:Issuer is not configured.");
+        Audience = configuration["AccessToken:Audience"] ?? throw new InvalidOperationException("AccessToken:Audience is not configured.");
     }
 
-    public string Issue(string clientId, string subject, string scope)
+    public string Issue(Client client, string subject, string scope)
     {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(Lifetime);
 
+        var token = client.AccessTokenFormat == "reference"
+            ? InMemoryStore.GenerateToken()
+            : CreateJwt(client.ClientId, subject, scope, now, expiresAt);
+
+        store.AccessTokens[token] = new AccessToken
+        {
+            Token = token,
+            ClientId = client.ClientId,
+            Subject = subject,
+            Scope = scope,
+            ExpiresAt = expiresAt,
+        };
+
+        return token;
+    }
+
+    private string CreateJwt(string clientId, string subject, string scope, DateTimeOffset now, DateTimeOffset expiresAt)
+    {
         // RFC 9068 §2.1: "at+jwt" marks this as an access token, so it can't be confused with (or
         // replayed as) an ID token or any other JWT signed by the same key.
         var header = new Dictionary<string, object>
@@ -55,9 +79,9 @@ public sealed class AccessTokenIssuer : IDisposable
         // RFC 9068 §2.2 required claims, plus scope (§2.2.3) so the resource can enforce it.
         var payload = new Dictionary<string, object>
         {
-            ["iss"] = issuer,
+            ["iss"] = Issuer,
             ["sub"] = subject,
-            ["aud"] = audience,
+            ["aud"] = Audience,
             ["client_id"] = clientId,
             ["scope"] = scope,
             ["iat"] = now.ToUnixTimeSeconds(),
@@ -67,18 +91,7 @@ public sealed class AccessTokenIssuer : IDisposable
 
         var signingInput = $"{Base64Url(JsonSerializer.SerializeToUtf8Bytes(header, JsonOptions))}.{Base64Url(JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions))}";
         var signature = signingKey.SignData(Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        var token = $"{signingInput}.{Base64Url(signature)}";
-
-        store.AccessTokens[token] = new AccessToken
-        {
-            Token = token,
-            ClientId = clientId,
-            Subject = subject,
-            Scope = scope,
-            ExpiresAt = expiresAt,
-        };
-
-        return token;
+        return $"{signingInput}.{Base64Url(signature)}";
     }
 
     // RFC 7517 JWK Set with just the public half of the signing key — served at
