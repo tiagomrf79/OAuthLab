@@ -1,13 +1,18 @@
 using System.Net.Http.Headers;
+using ProtectedResource;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<AccessTokenValidator>();
 
 // PublicClient calls this endpoint directly from browser JS (unlike ConfidentialClient, which
 // calls it server-to-server), so the browser enforces CORS. Vite's dev port can shift, so any
 // origin is allowed here rather than pinning one — this is a teaching sandbox, not production.
+// WWW-Authenticate is exposed so browser JS can read why a request was refused.
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("WWW-Authenticate"));
 });
 
 var app = builder.Build();
@@ -15,21 +20,35 @@ var app = builder.Build();
 app.UseRouting();
 app.UseCors();
 
-app.MapGet("/resource/read", (HttpRequest request) => HandleAsync(request, "Read op executed."));
-app.MapPost("/resource/write", (HttpRequest request) => HandleAsync(request, "Write op executed."));
-app.MapDelete("/resource/delete", (HttpRequest request) => HandleAsync(request, "Delete op executed."));
+// Each operation requires the scope of the same name, so a token granted only "read" can't write.
+app.MapGet("/resource/read", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "read", "Read op executed."));
+app.MapPost("/resource/write", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "write", "Write op executed."));
+app.MapDelete("/resource/delete", (HttpRequest request, AccessTokenValidator validator) => HandleAsync(request, validator, "delete", "Delete op executed."));
 
 app.Run();
 
-// accessToken is only checked for presence — validating it (and the scope it was granted)
-// against the authorization server is future work, same as before this endpoint was split
-// per scope.
-static async Task<IResult> HandleAsync(HttpRequest request, string message)
+static async Task<IResult> HandleAsync(HttpRequest request, AccessTokenValidator validator, string requiredScope, string message)
 {
     var accessToken = await ExtractAccessToken(request);
     if (string.IsNullOrWhiteSpace(accessToken))
     {
+        // RFC 6750 §3.1: a request with no token at all gets a bare challenge, no error code.
+        request.HttpContext.Response.Headers.WWWAuthenticate = "Bearer";
         return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
+
+    var token = await validator.ValidateAsync(accessToken);
+    if (token is null)
+    {
+        request.HttpContext.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
+        return Results.Json(new { error = "invalid_token" }, statusCode: 401);
+    }
+
+    // RFC 6750 §3.1: the token is fine, it just wasn't granted enough — 403, naming the scope needed.
+    if (!token.Scopes.Contains(requiredScope))
+    {
+        request.HttpContext.Response.Headers.WWWAuthenticate = $"Bearer error=\"insufficient_scope\", scope=\"{requiredScope}\"";
+        return Results.Json(new { error = "insufficient_scope", scope = requiredScope }, statusCode: 403);
     }
 
     return Results.Json(new { message });

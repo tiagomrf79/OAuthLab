@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<InMemoryStore>();
+builder.Services.AddSingleton<AccessTokenIssuer>();
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -48,7 +49,7 @@ app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();
 
-app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
+app.MapPost("/token", async (HttpRequest request, InMemoryStore store, AccessTokenIssuer tokens) =>
 {
     if (!request.HasFormContentType)
     {
@@ -71,13 +72,17 @@ app.MapPost("/token", async (HttpRequest request, InMemoryStore store) =>
 
     return grantType switch
     {
-        "authorization_code" => HandleAuthorizationCodeGrant(form, client, store),
-        "refresh_token" => HandleRefreshTokenGrant(form, client, store),
-        "client_credentials" => HandleClientCredentialsGrant(form, client, store),
-        "password" => HandlePasswordGrant(form, client, store),
+        "authorization_code" => HandleAuthorizationCodeGrant(form, client, store, tokens),
+        "refresh_token" => HandleRefreshTokenGrant(form, client, store, tokens),
+        "client_credentials" => HandleClientCredentialsGrant(form, client, tokens),
+        "password" => HandlePasswordGrant(form, client, store, tokens),
         _ => Results.Json(new { error = "unsupported_grant_type" }, statusCode: 400),
     };
 }).RequireCors(TokenCorsPolicy);
+
+// Public half of the access token signing key (RFC 7517), so a protected resource can verify the
+// JWTs AccessTokenIssuer mints without sharing any secret with this server.
+app.MapGet("/.well-known/jwks.json", (AccessTokenIssuer tokens) => Results.Json(tokens.GetJsonWebKeySet()));
 
 // RFC 7591 dynamic client registration — lets a native client obtain its own client_id/secret at
 // runtime instead of shipping a static one baked into every install (see NativeClient's
@@ -410,7 +415,7 @@ static object BuildRegistrationResponse(Client client, HttpRequest request) => n
         : $"{request.Scheme}://{request.Host}/register/{client.ClientId}",
 };
 
-static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client, InMemoryStore store)
+static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client, InMemoryStore store, AccessTokenIssuer tokens)
 {
     var code = form["code"].ToString();
     var redirectUri = form["redirect_uri"].ToString();
@@ -443,18 +448,11 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = InMemoryStore.GenerateToken();
+    var accessToken = tokens.Issue(client.ClientId, authCode.Subject, authCode.Scope);
+    // The refresh token stays opaque — only this server ever reads it, so there's nothing to gain
+    // from making it self-contained, and a store lookup is what lets it be burned on misuse.
     var refreshToken = InMemoryStore.GenerateToken();
-    var expiresIn = TimeSpan.FromHours(1);
 
-    store.AccessTokens[accessToken] = new AccessToken
-    {
-        Token = accessToken,
-        ClientId = client.ClientId,
-        Subject = authCode.Subject,
-        Scope = authCode.Scope,
-        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
-    };
     store.RefreshTokens[refreshToken] = new RefreshToken
     {
         Token = refreshToken,
@@ -467,28 +465,18 @@ static IResult HandleAuthorizationCodeGrant(IFormCollection form, Client client,
     {
         access_token = accessToken,
         token_type = "Bearer",
-        expires_in = (int)expiresIn.TotalSeconds,
+        expires_in = (int)AccessTokenIssuer.Lifetime.TotalSeconds,
         refresh_token = refreshToken,
         scope = authCode.Scope,
     });
 }
 
-static IResult HandleClientCredentialsGrant(IFormCollection form, Client client, InMemoryStore store)
+static IResult HandleClientCredentialsGrant(IFormCollection form, Client client, AccessTokenIssuer tokens)
 {
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
-    var accessToken = InMemoryStore.GenerateToken();
-    var expiresIn = TimeSpan.FromHours(1);
-
-    store.AccessTokens[accessToken] = new AccessToken
-    {
-        Token = accessToken,
-        ClientId = client.ClientId,
-        // No end user in this grant — the client is acting on its own behalf, so it is its own subject.
-        Subject = client.ClientId,
-        Scope = scope,
-        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
-    };
+    // No end user in this grant — the client is acting on its own behalf, so it is its own subject.
+    var accessToken = tokens.Issue(client.ClientId, client.ClientId, scope);
 
     // No refresh token per RFC 6749 §4.4.3 — the client can just request a new access token with
     // its credentials again, since it authenticates directly on every call.
@@ -496,12 +484,12 @@ static IResult HandleClientCredentialsGrant(IFormCollection form, Client client,
     {
         access_token = accessToken,
         token_type = "Bearer",
-        expires_in = (int)expiresIn.TotalSeconds,
+        expires_in = (int)AccessTokenIssuer.Lifetime.TotalSeconds,
         scope,
     });
 }
 
-static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemoryStore store)
+static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemoryStore store, AccessTokenIssuer tokens)
 {
     var username = form["username"].ToString();
     var password = form["password"].ToString();
@@ -514,18 +502,9 @@ static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemory
 
     var scope = string.Join(' ', form["scope"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(client.AllowedScopes));
 
-    var accessToken = InMemoryStore.GenerateToken();
+    var accessToken = tokens.Issue(client.ClientId, user.Subject, scope);
     var refreshToken = InMemoryStore.GenerateToken();
-    var expiresIn = TimeSpan.FromHours(1);
 
-    store.AccessTokens[accessToken] = new AccessToken
-    {
-        Token = accessToken,
-        ClientId = client.ClientId,
-        Subject = user.Subject,
-        Scope = scope,
-        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
-    };
     store.RefreshTokens[refreshToken] = new RefreshToken
     {
         Token = refreshToken,
@@ -538,13 +517,13 @@ static IResult HandlePasswordGrant(IFormCollection form, Client client, InMemory
     {
         access_token = accessToken,
         token_type = "Bearer",
-        expires_in = (int)expiresIn.TotalSeconds,
+        expires_in = (int)AccessTokenIssuer.Lifetime.TotalSeconds,
         refresh_token = refreshToken,
         scope,
     });
 }
 
-static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMemoryStore store)
+static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMemoryStore store, AccessTokenIssuer tokens)
 {
     var refreshTokenValue = form["refresh_token"].ToString();
 
@@ -561,23 +540,13 @@ static IResult HandleRefreshTokenGrant(IFormCollection form, Client client, InMe
         return Results.Json(new { error = "invalid_grant" }, statusCode: 400);
     }
 
-    var accessToken = InMemoryStore.GenerateToken();
-    var expiresIn = TimeSpan.FromHours(1);
-
-    store.AccessTokens[accessToken] = new AccessToken
-    {
-        Token = accessToken,
-        ClientId = client.ClientId,
-        Subject = refreshToken.Subject,
-        Scope = refreshToken.Scope,
-        ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
-    };
+    var accessToken = tokens.Issue(client.ClientId, refreshToken.Subject, refreshToken.Scope);
 
     return Results.Json(new
     {
         access_token = accessToken,
         token_type = "Bearer",
-        expires_in = (int)expiresIn.TotalSeconds,
+        expires_in = (int)AccessTokenIssuer.Lifetime.TotalSeconds,
         refresh_token = refreshTokenValue,
         scope = refreshToken.Scope,
     });

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AuthorizationServer.Pages;
 
-public class ApproveModel(InMemoryStore store) : PageModel
+public class ApproveModel(InMemoryStore store, AccessTokenIssuer tokens) : PageModel
 {
     public IActionResult OnPost(string reqid, string action, string[]? scope)
     {
@@ -51,22 +51,13 @@ public class ApproveModel(InMemoryStore store) : PageModel
         {
             // No refresh token here — RFC 6749 §4.2.2 doesn't define one for the implicit grant,
             // and there'd be no way to redeem it later without a client secret to authenticate with.
-            var accessToken = InMemoryStore.GenerateToken();
-            var expiresIn = TimeSpan.FromHours(1);
-            store.AccessTokens[accessToken] = new AccessToken
-            {
-                Token = accessToken,
-                ClientId = pending.ClientId,
-                Subject = subject,
-                Scope = grantedScope,
-                ExpiresAt = DateTimeOffset.UtcNow.Add(expiresIn),
-            };
+            var accessToken = tokens.Issue(pending.ClientId, subject, grantedScope);
 
             return Redirect(BuildRedirectUrl(new()
             {
                 ["access_token"] = accessToken,
                 ["token_type"] = "Bearer",
-                ["expires_in"] = ((int)expiresIn.TotalSeconds).ToString(),
+                ["expires_in"] = ((int)AccessTokenIssuer.Lifetime.TotalSeconds).ToString(),
                 ["scope"] = grantedScope,
             }));
         }
